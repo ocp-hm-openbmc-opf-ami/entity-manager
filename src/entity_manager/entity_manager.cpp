@@ -50,8 +50,8 @@
 constexpr const char* tempConfigDir = "/tmp/configuration/";
 constexpr const char* lastConfiguration = "/tmp/configuration/last.json";
 
-static constexpr std::array<const char*, 6> settableInterfaces = {
-    "FanProfile", "Pid", "Pid.Zone", "Stepwise", "Thresholds", "Polling"};
+static constexpr std::array<const char*, 7> settableInterfaces = {
+    "FanProfile", "Pid", "Pid.Zone", "Stepwise", "Thresholds", "Polling", "Preserve"};
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 
