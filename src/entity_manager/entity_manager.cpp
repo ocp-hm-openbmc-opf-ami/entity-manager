@@ -133,18 +133,30 @@ void postToDbus(const nlohmann::json& newConfiguration,
             systemConfiguration, jsonPointerPath, boardIface, boardValues,
             objServer);
         jsonPointerPath += "/";
+        std::string foundPath;
         // iterate through board properties
         for (const auto& [propName, propValue] : boardValues.items())
         {
+            if (propName == "FoundProbePath")
+            {
+                foundPath = propValue;
+            }
             if (propValue.type() == nlohmann::json::value_t::object)
             {
                 std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
                     dbus_interface::createInterface(objServer, boardPath,
                                                     propName, boardNameOrig);
-
+                auto perm = sdbusplus::asio::PropertyPermission::readOnly;
+                if (propName ==
+                    "xyz.openbmc_project.Inventory.Decorator.AssetTag")
+                {
+                    foundData["foundPath"] = foundPath;
+                    mapFoundData[jsonPointerPath + propName] = foundData;
+                    perm = sdbusplus::asio::PropertyPermission::readWrite;
+                }
                 dbus_interface::populateInterfaceFromJson(
                     systemConfiguration, jsonPointerPath + propName, iface,
-                    propValue, objServer);
+                    propValue, objServer, perm);
             }
         }
 

@@ -530,6 +530,9 @@ void scan::PerformScan::updateSystemConfiguration(
         getName.value() = deviceName;
         usedNames.insert(deviceName);
 
+        // Save the dbus path info of the device
+        record["FoundProbePath"] = path;
+
         for (auto keyPair = record.begin(); keyPair != record.end(); keyPair++)
         {
             if (keyPair.key() != "Name")
