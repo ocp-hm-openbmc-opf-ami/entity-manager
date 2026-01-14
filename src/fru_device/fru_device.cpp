@@ -201,6 +201,46 @@ static void makeProbeInterface(size_t bus, size_t address,
     it->second->initialize();
 }
 
+static bool isFruConfigured(uint8_t bus, uint8_t adress)
+{
+    std::string configFile =
+        "/usr/share/entity-manager/configurations/eeprom.json";
+    using Json = nlohmann::json;
+    std::ifstream jsonFile(configFile);
+    if (!jsonFile.good())
+    {
+        std::cerr << "JSON file not found " << configFile << "\n";
+        return false;
+    }
+
+    Json data = nullptr;
+    try
+    {
+        data = Json::parse(jsonFile, nullptr, false);
+    }
+    catch (const Json::parse_error& e)
+    {
+        std::cerr << "Faile to parse FRU Json file";
+        return false;
+    }
+
+    if (data.empty())
+    {
+        return false;
+    }
+    for (const auto& fruConfigs : data["FRU_EEPROM"])
+    {
+        uint8_t busConf = static_cast<uint8_t>(fruConfigs["Bus"]);
+        uint8_t addrConf = static_cast<uint8_t>(fruConfigs["Address"]);
+        if ((busConf == bus) && (addrConf == adress))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 // Issue an I2C transaction to first write to_target_buf_len bytes,then read
 // from_target_buf_len bytes.
 static int i2cSmbusWriteThenRead(
@@ -443,7 +483,8 @@ std::set<size_t> findI2CEeproms(int i2cBus,
         foundList.insert(address);
 
         std::vector<uint8_t> device = processEeprom(i2cBus, address);
-        if (!device.empty())
+        if (!device.empty() ||
+            (device.empty() && isFruConfigured(i2cBus, address)))
         {
             devices->emplace(address, device);
         }
@@ -595,7 +636,7 @@ int getBusFRUs(int file, int first, int last, int bus,
                 pair = readFRUContents(readerBytewise, errorMessage);
             }
 
-            if (pair.first.empty())
+            if ((pair.first.empty()) && (!isFruConfigured(bus, ii)))
             {
                 continue;
             }
@@ -810,17 +851,19 @@ void addFruObjectToDbus(
     std::shared_ptr<sdbusplus::asio::connection>& systemBus)
 {
     boost::container::flat_map<std::string, std::string> formattedFRU;
+    std::string productName = "/xyz/openbmc_project/FruDevice/";
 
     std::optional<std::string> optionalProductName = getProductName(
         device, formattedFRU, bus, address, unknownBusObjectCount);
     if (!optionalProductName)
     {
         std::cerr << "getProductName failed. product name is empty.\n";
-        return;
+        productName += "Unknown";
     }
-
-    std::string productName =
-        "/xyz/openbmc_project/FruDevice/" + optionalProductName.value();
+    else
+    {
+        productName += optionalProductName.value();
+    }
 
     std::optional<int> index = findIndexForFRU(dbusInterfaceMap, productName);
     if (index.has_value())
@@ -1041,6 +1084,134 @@ bool writeFRU(uint8_t bus, uint8_t address, const std::vector<uint8_t>& fru)
     }
     close(file);
     return true;
+}
+
+std::vector<uint8_t> getFruConfig(const uint16_t& fruBus,
+                                  const uint8_t& fruAddress)
+{
+    auto bus = std::make_shared<sdbusplus::asio::connection>(io);
+    std::vector<uint8_t> result;
+    using GetSubTreePathsType = std::vector<std::string>;
+
+    auto message = bus->new_method_call(
+        "xyz.openbmc_project.ObjectMapper",
+        "/xyz/openbmc_project/object_mapper",
+        "xyz.openbmc_project.ObjectMapper", "GetSubTreePaths");
+    message.append("/", 0,
+                   std::array<const char*, 1>{
+                       "xyz.openbmc_project.Inventory.Item.FruConfig"});
+    GetSubTreePathsType idPaths;
+    auto reply = bus->call(message);
+    reply.read(idPaths);
+
+    for (const auto& path : idPaths)
+    {
+        std::map<std::string, DBusValueVariant> properties;
+
+        sdbusplus::message_t getProperties =
+            bus->new_method_call("xyz.openbmc_project.FruDevice", path.c_str(),
+                                 "org.freedesktop.DBus.Properties", "GetAll");
+        getProperties.append("xyz.openbmc_project.Inventory.Item.FruConfig");
+        try
+        {
+            sdbusplus::message_t response = bus->call(getProperties);
+            response.read(properties);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "GetAll Failed";
+            continue;
+        }
+        auto configBus = properties.find("Bus");
+        auto configAddr = properties.find("Address");
+        uint8_t confBus = 0;
+        uint8_t confAddr = 0;
+
+        if (configBus == properties.end() || configAddr == properties.end())
+        {
+            std::cerr << "Failed to find Bus and Address\n";
+            continue;
+        }
+        else
+        {
+            if (auto busValue = std::get_if<uint8_t>(&configBus->second);
+                busValue != nullptr)
+            {
+                if (auto addrValue = std::get_if<uint8_t>(&configAddr->second);
+                    addrValue != nullptr)
+                {
+                    confBus = *busValue;
+                    confAddr = *addrValue;
+                }
+            }
+        }
+
+        if ((static_cast<uint8_t>(fruBus) == confBus) &&
+            (static_cast<uint8_t>(fruAddress) == confAddr))
+        {
+            auto fruIdIter = properties.find("FruId");
+            auto fruSizeIter = properties.find("FruSize");
+            if ((fruIdIter != properties.end()) &&
+                (fruSizeIter != properties.end()))
+            {
+                auto fruIdValue = std::get_if<uint8_t>(&fruIdIter->second);
+                result.push_back(static_cast<uint8_t>(*fruIdValue));
+
+                auto fruSizeValue = std::get_if<uint8_t>(&fruSizeIter->second);
+                result.push_back(static_cast<uint8_t>(*fruSizeValue));
+
+                break;
+            }
+            return std::vector<uint8_t>();
+        }
+    }
+    return result;
+}
+
+void DoFruConfig(sdbusplus::asio::object_server& objServer)
+{
+    std::string configFile =
+        "/usr/share/entity-manager/configurations/eeprom.json";
+    using Json = nlohmann::json;
+    std::ifstream jsonFile(configFile);
+    if (!jsonFile.good())
+    {
+        std::cerr << "JSON file not found " << configFile << "\n";
+        return;
+    }
+
+    Json data = nullptr;
+    try
+    {
+        data = Json::parse(jsonFile, nullptr, false);
+    }
+    catch (const Json::parse_error& e)
+    {
+        std::cerr << "Faile to parse FRU Json file";
+    }
+
+    if (data.empty())
+    {
+        std::cerr << "FRU Config data is empty";
+    }
+    for (const auto& fruConfigs : data["FRU_EEPROM"])
+    {
+        uint8_t busConf = static_cast<uint8_t>(fruConfigs["Bus"]);
+        uint8_t addrConf = static_cast<uint8_t>(fruConfigs["Address"]);
+        std::string fruName = static_cast<std::string>(fruConfigs["Name"]);
+        uint8_t fruId = static_cast<uint8_t>(fruConfigs["FruId"]);
+        uint8_t fruSize = static_cast<uint8_t>(fruConfigs["FruSize"]);
+        std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
+            objServer.add_interface(
+                "/xyz/openbmc_project/FruDevice/" + fruName,
+                "xyz.openbmc_project.Inventory.Item.FruConfig");
+
+        iface->register_property("Bus", busConf);
+        iface->register_property("Address", addrConf);
+        iface->register_property("FruId", fruId);
+        iface->register_property("FruSize", fruSize);
+        iface->initialize();
+    }
 }
 
 void rescanOneBus(
@@ -1429,6 +1600,11 @@ int main()
             rescanBusses(busMap, dbusInterfaceMap, unknownBusObjectCount,
                          powerIsOn, objServer, systemBus);
         });
+    /*TODO: Need to enable support once, D-Bus destruction is supported
+        iface->register_method("DoFruConfig", [&]() {
+            DoFruConfig(objServer);
+        });
+    */
     iface->initialize();
 
     std::function<void(sdbusplus::message_t & message)> eventHandler =
@@ -1529,6 +1705,7 @@ int main()
     rescanBusses(busMap, dbusInterfaceMap, unknownBusObjectCount, powerIsOn,
                  objServer, systemBus);
 
+    DoFruConfig(objServer);
     io.run();
     return 0;
 }
