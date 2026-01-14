@@ -1,0 +1,12 @@
+[Unit]
+Description=Fru Device
+After=dbus.service
+
+[Service]
+ExecStart=/usr/libexec/entity-manager/fru-device
+Restart=always
+RestartSec=5
+Type=simple
+
+[Install]
+WantedBy=multi-user.target
