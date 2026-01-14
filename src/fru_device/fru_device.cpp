@@ -1342,6 +1342,22 @@ void rescanBusses(
             return;
         }
 
+	const fs::path lockPath = "/tmp/fru_scan.lock";
+        {
+            std::ofstream lockFile(lockPath);
+            if (lockFile.is_open())
+            {
+                lockFile << "fru-scan\n";
+                lockFile.close();
+            }
+            else
+            {
+                std::cerr << "Unable to create FRU scan lock file: PATH="
+                          << lockPath << " errno=" << errno << " ("
+                          << std::strerror(errno) << ")\n";
+            }
+        }
+
         auto devDir = fs::path("/dev/");
         std::vector<fs::path> i2cBuses;
 
@@ -1392,6 +1408,19 @@ void rescanBusses(
                                            unknownBusObjectCount, powerIsOn,
                                            objServer, systemBus);
                     }
+                }
+		std::error_code remove_file;
+                fs::remove(lockPath, remove_file);
+                if (remove_file)
+                {
+                    std::cerr
+                        << "FRU scan lock removal failed: PATH=" << lockPath
+                        << ", ERROR=" << remove_file.message() << "\n";
+                }
+                else
+                {
+                    std::cerr
+                        << "FRU scan lock removed: PATH=" << lockPath << "\n";
                 }
             });
         scan->run();
