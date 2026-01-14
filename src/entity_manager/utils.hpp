@@ -17,6 +17,7 @@ using DBusObject = boost::container::flat_map<std::string, DBusInterface>;
 constexpr const char* configurationOutDir = "/var/configuration/";
 constexpr const char* versionHashFile = "/var/configuration/version";
 constexpr const char* versionFile = "/etc/os-release";
+constexpr const bool debug = false;
 
 namespace em_utils
 {

@@ -150,7 +150,10 @@ std::set<std::string> getProbeInterfaces()
         auto findProbe = it->find("Probe");
         if (findProbe == it->end())
         {
+            if constexpr (debug)
+            {
             std::cerr << "configuration file missing probe:\n " << *it << "\n";
+            }
             it++;
             continue;
         }

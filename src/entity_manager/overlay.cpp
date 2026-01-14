@@ -96,8 +96,11 @@ void linkMux(const std::string& muxName, uint64_t busIndex, uint64_t address,
             devDir / ("channel-" + std::to_string(channelIndex));
         if (!is_symlink(channelPath))
         {
+            if constexpr (debug)
+            {
             std::cerr << channelPath << " for mux channel " << channelName
                       << " doesn't exist!\n";
+            }
             continue;
         }
         std::filesystem::path bus = std::filesystem::read_symlink(channelPath);
@@ -122,7 +125,10 @@ static int deleteDevice(const std::string& busPath, uint64_t address,
     std::ofstream deviceFile(deviceDestructor);
     if (!deviceFile.good())
     {
+        if constexpr (debug)
+        {
         std::cerr << "Error writing " << deviceDestructor << "\n";
+        }
         return -1;
     }
     deviceFile << std::to_string(address);
@@ -139,7 +145,10 @@ static int createDevice(const std::string& busPath,
     std::ofstream deviceFile(deviceConstructor);
     if (!deviceFile.good())
     {
+        if constexpr (debug)
+        {
         std::cerr << "Error writing " << deviceConstructor << "\n";
+        }
         return -1;
     }
     deviceFile << parameters;

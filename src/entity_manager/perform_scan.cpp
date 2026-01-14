@@ -583,7 +583,10 @@ void scan::PerformScan::run()
         auto findProbe = it->find("Probe");
         if (findProbe == it->end())
         {
+            if constexpr (debug)
+            {
             std::cerr << "configuration file missing probe:\n " << *it << "\n";
+            }
             it = _configurations.erase(it);
             continue;
         }
@@ -591,7 +594,10 @@ void scan::PerformScan::run()
         auto findName = it->find("Name");
         if (findName == it->end())
         {
+            if constexpr (debug)
+            {
             std::cerr << "configuration file missing name:\n " << *it << "\n";
+            }
             it = _configurations.erase(it);
             continue;
         }

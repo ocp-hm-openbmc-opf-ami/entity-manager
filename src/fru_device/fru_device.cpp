@@ -590,8 +590,11 @@ int getBusFRUs(int file, int first, int last, int bus,
             // Set target address
             if (ioctl(file, I2C_SLAVE, ii) < 0)
             {
+                if (debug)
+                {
                 std::cerr << "device at bus " << bus << " address " << ii
                           << " busy\n";
+                }
                 continue;
             }
             // probe
@@ -623,8 +626,11 @@ int getBusFRUs(int file, int first, int last, int bus,
             std::optional<bool> is16Bit = isDevice16Bit(file, ii);
             if (!is16Bit.has_value())
             {
+                if (debug)
+                {
                 std::cerr << "failed to read bus " << bus << " address " << ii
                           << "\n";
+                }
                 if (powerIsOn)
                 {
                     failedItems.insert(ii);
@@ -881,7 +887,10 @@ void addFruObjectToDbus(
         device, formattedFRU, bus, address, unknownBusObjectCount);
     if (!optionalProductName)
     {
+        if (debug)
+        {
         std::cerr << "getProductName failed. product name is empty.\n";
+        }
         productName += "Unknown";
     }
     else

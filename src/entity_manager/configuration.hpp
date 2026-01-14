@@ -12,6 +12,7 @@ constexpr const char* hostConfigurationDirectory = SYSCONF_DIR "configurations";
 constexpr const char* configurationDirectory = PACKAGE_DIR "configurations";
 constexpr const char* currentConfiguration = "/var/configuration/system.json";
 constexpr const char* schemaDirectory = PACKAGE_DIR "configurations/schemas";
+constexpr const bool debug = false;
 
 bool writeJsonFiles(const nlohmann::json& systemConfiguration);
 

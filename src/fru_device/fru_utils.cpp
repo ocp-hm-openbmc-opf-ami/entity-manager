@@ -232,7 +232,10 @@ bool verifyOffset(std::span<const uint8_t> fruBytes, fruAreas currentArea,
     // check if Fru data has at least 8 byte header
     if (fruBytesSize <= fruBlockSize)
     {
+        if(debug)
+        {
         std::cerr << "Error: trying to parse empty FRU\n";
+        }
         return false;
     }
 
@@ -736,8 +739,11 @@ bool findFRUHeader(FRUReader& reader, const std::string& errorHelp,
 {
     if (reader.read(baseOffset, 0x8, blockData.data()) < 0)
     {
+        if (debug)
+        {
         std::cerr << "failed to read " << errorHelp << " base offset "
                   << baseOffset << "\n";
+        }
         return false;
     }
 
@@ -823,8 +829,11 @@ std::pair<std::vector<uint8_t>, bool> readFRUContents(
 
         if (reader.read(baseOffset + areaOffset, 0x2, blockData.data()) < 0)
         {
+            if (debug)
+            {
             std::cerr << "failed to read " << errorHelp << " base offset "
                       << baseOffset << "\n";
+            }
             return {{}, true};
         }
 
@@ -853,8 +862,11 @@ std::pair<std::vector<uint8_t>, bool> readFRUContents(
             // record has 3 bytes of the header we care about.
             if (reader.read(baseOffset + areaOffset, 0x3, blockData.data()) < 0)
             {
+                if (debug)
+                {
                 std::cerr << "failed to read " << errorHelp << " base offset "
                           << baseOffset << "\n";
+                }
                 return {{}, true};
             }
 
@@ -885,8 +897,11 @@ std::pair<std::vector<uint8_t>, bool> readFRUContents(
         if (reader.read(baseOffset + readOffset, requestLength,
                         blockData.data()) < 0)
         {
+            if (debug)
+            {
             std::cerr << "failed to read " << errorHelp << " base offset "
                       << baseOffset << "\n";
+            }
             return {{}, true};
         }
 
@@ -1137,14 +1152,20 @@ std::optional<std::string> getProductName(
     resCodes res = formatIPMIFRU(device, formattedFRU);
     if (res == resCodes::resErr)
     {
+        if (debug)
+        {
         std::cerr << "failed to parse FRU for device at bus " << bus
                   << " address " << address << "\n";
+        }
         return std::nullopt;
     }
     if (res == resCodes::resWarn)
     {
+        if (debug)
+        {
         std::cerr << "Warnings while parsing FRU for device at bus " << bus
                   << " address " << address << "\n";
+        }
     }
 
     auto productNameFind = formattedFRU.find("BOARD_PRODUCT_NAME");
