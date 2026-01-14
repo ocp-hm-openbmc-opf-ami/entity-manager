@@ -509,6 +509,30 @@ int getBusFRUs(int file, int first, int last, int bus,
 
         // Scan for i2c eeproms loaded on this bus.
         std::set<size_t> skipList = findI2CEeproms(bus, devices);
+        if (!skipList.empty())
+        {
+            // NOTE:
+            // In this function there are two ways to find the EEPROM.
+            // and record the information in the devices data structure.
+            // Method 1. In findI2CEeproms function,
+            //    it search "/sys/bus/i2c/devices/" and find the EEPROM device.
+            // Method 2. Find out the slave address of all devices
+            //    on the specified I2C bus, and test whether device
+            //    is 8 or 16 bits EEPROM by sending data 0 to each device.
+            //    Unfortunately,
+            //    FPGA Soc will crash when it receives 0 data,
+            //    and it will not return to normal until the power cycle.
+            // According to the experimental results,
+            // the Method 1 can find out all the EEPROMs on the system
+            // on a specific I2C bus and record the information,
+            // in this case,
+            // There is no need to proceed with Method 2.
+
+            // Find the EEPROM on the specified I2C bus,
+            // and record the information in the devices data structure
+            return 1;
+        }
+
         std::set<size_t>& failedItems = failedAddresses[bus];
         std::set<size_t>& foundItems = fruAddresses[bus];
         foundItems.clear();
@@ -1606,6 +1630,14 @@ int main()
         });
     */
     iface->initialize();
+
+#ifdef ENABLE_TEST_FRU
+    std::shared_ptr<sdbusplus::asio::dbus_interface> testIface =
+        objServer.add_interface("/xyz/openbmc_project/FruDevice/TestFru",
+                                "xyz.openbmc_project.FruDevice");
+    testIface->register_property("BOARD_PRODUCT_NAME", 0);
+    testIface->initialize();
+#endif // ENABLE_TEST_FRU
 
     std::function<void(sdbusplus::message_t & message)> eventHandler =
         [&](sdbusplus::message_t& message) {
