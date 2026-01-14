@@ -671,7 +671,7 @@ int main()
     });
     dbus_interface::tryIfaceInitialize(entityIface);
 
-    if (em_utils::fwVersionIsSame())
+    if (em_utils::fwVersionIsSame() || std::filesystem::exists(configuration::currentConfiguration))
     {
         if (std::filesystem::is_regular_file(
                 configuration::currentConfiguration))
