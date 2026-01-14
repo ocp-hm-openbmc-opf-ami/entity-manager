@@ -51,7 +51,8 @@ constexpr const char* tempConfigDir = "/tmp/configuration/";
 constexpr const char* lastConfiguration = "/tmp/configuration/last.json";
 
 static constexpr std::array<const char*, 7> settableInterfaces = {
-    "FanProfile", "Pid", "Pid.Zone", "Stepwise", "Thresholds", "Polling", "Preserve"};
+    "FanProfile", "Pid",     "Pid.Zone", "Stepwise",
+    "Thresholds", "Polling", "Preserve"};
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 
@@ -234,6 +235,16 @@ void postToDbus(const nlohmann::json& newConfiguration,
                     objServer, getPermission(itemType));
             }
 
+            std::shared_ptr<sdbusplus::asio::dbus_interface> itemIface =
+                dbus_interface::createInterface(
+                    objServer, ifacePath,
+                    "xyz.openbmc_project.Configuration." + itemType,
+                    boardNameOrig);
+
+            dbus_interface::populateInterfaceFromJson(
+                systemConfiguration, jsonPointerPath, itemIface, item,
+                objServer, getPermission(itemType));
+
             for (const auto& [name, config] : item.items())
             {
                 jsonPointerPath = jsonPointerPathBoard;
@@ -303,16 +314,6 @@ void postToDbus(const nlohmann::json& newConfiguration,
                     }
                 }
             }
-
-            std::shared_ptr<sdbusplus::asio::dbus_interface> itemIface =
-                dbus_interface::createInterface(
-                    objServer, ifacePath,
-                    "xyz.openbmc_project.Configuration." + itemType,
-                    boardNameOrig);
-
-            dbus_interface::populateInterfaceFromJson(
-                systemConfiguration, jsonPointerPath, itemIface, item,
-                objServer, getPermission(itemType));
 
             topology.addBoard(boardPath, boardType, boardNameOrig, item);
         }
@@ -671,7 +672,8 @@ int main()
     });
     dbus_interface::tryIfaceInitialize(entityIface);
 
-    if (em_utils::fwVersionIsSame() || std::filesystem::exists(configuration::currentConfiguration))
+    if (em_utils::fwVersionIsSame() ||
+        std::filesystem::exists(configuration::currentConfiguration))
     {
         if (std::filesystem::is_regular_file(
                 configuration::currentConfiguration))
