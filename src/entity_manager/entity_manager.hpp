@@ -24,6 +24,7 @@
 #include <boost/container/flat_map.hpp>
 #include <nlohmann/json.hpp>
 #include <sdbusplus/asio/object_server.hpp>
+#include <phosphor-logging/lg2.hpp>
 
 #include <string>
 
@@ -74,11 +75,27 @@ inline void logDeviceAdded(const nlohmann::json& record)
         name = findName->get<std::string>();
     }
 
-    sd_journal_send("MESSAGE=Inventory Added: %s", name.c_str(), "PRIORITY=%i",
-                    LOG_INFO, "REDFISH_MESSAGE_ID=%s",
-                    "OpenBMC.0.1.InventoryAdded",
-                    "REDFISH_MESSAGE_ARGS=%s,%s,%s", model.c_str(),
-                    type.c_str(), sn.c_str(), "NAME=%s", name.c_str(), NULL);
+    std::string severity =
+            "xyz.openbmc_project.Logging.Entry.Level.Informational";
+        auto bus = sdbusplus::bus::new_default_system();
+        sdbusplus::message::message m = bus.new_method_call(
+            "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
+            "xyz.openbmc_project.Logging.Create", "Create");
+        std::string journalMsg = "OpenBMC.0.1.InventoryAdded";
+
+        std::map<std::string, std::string> additionalData;
+        additionalData["REDFISH_MESSAGE_ID"] =
+            "OpenBMC.0.1.InventoryAdded";
+        m.append(journalMsg, severity, additionalData);
+        try
+        {
+            bus.call(m);
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            lg2::error("Failed to create log entry: {ERROR}", "ERROR",
+                       e.what());
+        }
 }
 
 inline void logDeviceRemoved(const nlohmann::json& record)
@@ -128,9 +145,25 @@ inline void logDeviceRemoved(const nlohmann::json& record)
         name = findName->get<std::string>();
     }
 
-    sd_journal_send("MESSAGE=Inventory Removed: %s", name.c_str(),
-                    "PRIORITY=%i", LOG_INFO, "REDFISH_MESSAGE_ID=%s",
-                    "OpenBMC.0.1.InventoryRemoved",
-                    "REDFISH_MESSAGE_ARGS=%s,%s,%s", model.c_str(),
-                    type.c_str(), sn.c_str(), "NAME=%s", name.c_str(), NULL);
+    std::string severity =
+            "xyz.openbmc_project.Logging.Entry.Level.Informational";
+        auto bus = sdbusplus::bus::new_default_system();
+        sdbusplus::message::message m = bus.new_method_call(
+            "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
+            "xyz.openbmc_project.Logging.Create", "Create");
+        std::string journalMsg = "OpenBMC.0.1.InventoryRemoved";
+
+        std::map<std::string, std::string> additionalData;
+        additionalData["REDFISH_MESSAGE_ID"] =
+            "OpenBMC.0.1.InventoryRemoved";
+        m.append(journalMsg, severity, additionalData);
+        try
+        {
+            bus.call(m);
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            lg2::error("Failed to create log entry: {ERROR}", "ERROR",
+                       e.what());
+        }
 }
