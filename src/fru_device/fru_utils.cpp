@@ -232,9 +232,9 @@ bool verifyOffset(std::span<const uint8_t> fruBytes, fruAreas currentArea,
     // check if Fru data has at least 8 byte header
     if (fruBytesSize <= fruBlockSize)
     {
-        if(debug)
+        if (debug)
         {
-        std::cerr << "Error: trying to parse empty FRU\n";
+            std::cerr << "Error: trying to parse empty FRU\n";
         }
         return false;
     }
@@ -543,7 +543,7 @@ resCodes formatIPMIFRU(
                 std::tm fruTime = intelEpoch();
                 std::time_t timeValue = timegm(&fruTime);
                 timeValue += static_cast<long>(minutes) * 60;
-		gmtime_r(&timeValue, &fruTime);
+                gmtime_r(&timeValue, &fruTime);
 
                 // Tue Nov 20 23:08:00 2018
                 std::array<char, 32> timeString = {};
@@ -741,8 +741,8 @@ bool findFRUHeader(FRUReader& reader, const std::string& errorHelp,
     {
         if (debug)
         {
-        std::cerr << "failed to read " << errorHelp << " base offset "
-                  << baseOffset << "\n";
+            std::cerr << "failed to read " << errorHelp << " base offset "
+                      << baseOffset << "\n";
         }
         return false;
     }
@@ -831,8 +831,8 @@ std::pair<std::vector<uint8_t>, bool> readFRUContents(
         {
             if (debug)
             {
-            std::cerr << "failed to read " << errorHelp << " base offset "
-                      << baseOffset << "\n";
+                std::cerr << "failed to read " << errorHelp << " base offset "
+                          << baseOffset << "\n";
             }
             return {{}, true};
         }
@@ -864,8 +864,8 @@ std::pair<std::vector<uint8_t>, bool> readFRUContents(
             {
                 if (debug)
                 {
-                std::cerr << "failed to read " << errorHelp << " base offset "
-                          << baseOffset << "\n";
+                    std::cerr << "failed to read " << errorHelp
+                              << " base offset " << baseOffset << "\n";
                 }
                 return {{}, true};
             }
@@ -899,8 +899,8 @@ std::pair<std::vector<uint8_t>, bool> readFRUContents(
         {
             if (debug)
             {
-            std::cerr << "failed to read " << errorHelp << " base offset "
-                      << baseOffset << "\n";
+                std::cerr << "failed to read " << errorHelp << " base offset "
+                          << baseOffset << "\n";
             }
             return {{}, true};
         }
@@ -1154,8 +1154,8 @@ std::optional<std::string> getProductName(
     {
         if (debug)
         {
-        std::cerr << "failed to parse FRU for device at bus " << bus
-                  << " address " << address << "\n";
+            std::cerr << "failed to parse FRU for device at bus " << bus
+                      << " address " << address << "\n";
         }
         return std::nullopt;
     }
@@ -1163,8 +1163,8 @@ std::optional<std::string> getProductName(
     {
         if (debug)
         {
-        std::cerr << "Warnings while parsing FRU for device at bus " << bus
-                  << " address " << address << "\n";
+            std::cerr << "Warnings while parsing FRU for device at bus " << bus
+                      << " address " << address << "\n";
         }
     }
 
