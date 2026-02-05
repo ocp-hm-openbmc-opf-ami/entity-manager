@@ -543,7 +543,7 @@ resCodes formatIPMIFRU(
                 std::tm fruTime = intelEpoch();
                 std::time_t timeValue = timegm(&fruTime);
                 timeValue += static_cast<long>(minutes) * 60;
-                fruTime = *std::gmtime(&timeValue);
+		gmtime_r(&timeValue, &fruTime);
 
                 // Tue Nov 20 23:08:00 2018
                 std::array<char, 32> timeString = {};
