@@ -1,28 +1,14 @@
-/*
-// Copyright (c) 2018 Intel Corporation
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-*/
-/// \file fru_utils.hpp
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2018 Intel Corporation
 
 #pragma once
 #include "fru_reader.hpp"
 
-#include <boost/container/flat_map.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
 #include <cstdint>
 #include <cstdio>
+#include <flat_map>
 #include <functional>
 #include <regex>
 #include <string>
@@ -37,8 +23,8 @@ extern "C"
 constexpr size_t fruBlockSize = 8;
 constexpr const bool debug = false;
 
-using DeviceMap = boost::container::flat_map<int, std::vector<uint8_t>>;
-using BusMap = boost::container::flat_map<int, std::shared_ptr<DeviceMap>>;
+using DeviceMap = std::flat_map<int, std::vector<uint8_t>>;
+using BusMap = std::flat_map<int, std::shared_ptr<DeviceMap>>;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 inline BusMap busMap;
@@ -126,7 +112,7 @@ bool checkLangEng(uint8_t lang);
 
 resCodes formatIPMIFRU(
     std::span<const uint8_t> fruBytes,
-    boost::container::flat_map<std::string, std::string>& result);
+    std::flat_map<std::string, std::string, std::less<>>& result);
 
 std::vector<uint8_t>& getFRUInfo(const uint16_t& bus, const uint8_t& address);
 
@@ -141,6 +127,14 @@ unsigned int updateFRUAreaLenAndChecksum(
 
 ssize_t getFieldLength(uint8_t fruFieldTypeLenValue);
 
+struct FruSections
+{
+    off_t IpmiFruOffset = 0;
+    std::array<uint8_t, I2C_SMBUS_BLOCK_MAX> ipmiFruBlock;
+
+    off_t GigabyteXmlOffset = 0;
+};
+
 /// \brief Find a FRU header.
 /// \param reader the FRUReader to read via
 /// \param errorHelp and a helper string for failures
@@ -149,9 +143,8 @@ ssize_t getFieldLength(uint8_t fruFieldTypeLenValue);
 ///        set to 0 to perform search;
 ///        returns the offset at which a header was found
 /// \return whether a header was found
-bool findFRUHeader(FRUReader& reader, const std::string& errorHelp,
-                   std::array<uint8_t, I2C_SMBUS_BLOCK_MAX>& blockData,
-                   off_t& baseOffset);
+std::optional<FruSections> findFRUHeader(
+    FRUReader& reader, const std::string& errorHelp, off_t offset);
 
 /// \brief Read and validate FRU contents.
 /// \param reader the FRUReader to read via
@@ -206,9 +199,9 @@ bool copyRestFRUArea(std::vector<uint8_t>& fruData,
 /// \return optional<int> highest index for fru device on success, return
 /// nullopt on failure.
 std::optional<int> findIndexForFRU(
-    boost::container::flat_map<
-        std::pair<size_t, size_t>,
-        std::shared_ptr<sdbusplus::asio::dbus_interface>>& dbusInterfaceMap,
+    std::flat_map<std::pair<size_t, size_t>,
+                  std::shared_ptr<sdbusplus::asio::dbus_interface>>&
+        dbusInterfaceMap,
     std::string& productName);
 
 /// \brief It does format fru data and find productName in the formatted
@@ -222,7 +215,28 @@ std::optional<int> findIndexForFRU(
 
 std::optional<std::string> getProductName(
     std::vector<uint8_t>& device,
-    boost::container::flat_map<std::string, std::string>& formattedFRU,
+    std::flat_map<std::string, std::string, std::less<>>& formattedFRU,
     uint32_t bus, uint32_t address, size_t& unknownBusObjectCount);
 
 bool getFruData(std::vector<uint8_t>& fruData, uint32_t bus, uint32_t address);
+
+bool isFieldEditable(std::string_view fieldName);
+
+bool updateAreaChecksum(std::vector<uint8_t>& fruArea);
+
+bool disassembleFruData(std::vector<uint8_t>& fruData,
+                        std::vector<std::vector<uint8_t>>& areasData);
+
+bool createDummyArea(fruAreas fruArea, std::vector<uint8_t>& areaData);
+
+bool assembleFruData(std::vector<uint8_t>& fruData,
+                     const std::vector<std::vector<uint8_t>>& areasData);
+
+bool setField(const fruAreas& fruAreaToUpdate, std::vector<uint8_t>& areaData,
+              const std::string& propertyName, const std::string& value);
+
+bool updateAddProperty(const std::string& propertyValue,
+                       const std::string& propertyName,
+                       std::vector<uint8_t>& fruData);
+
+std::string parseMacFromGzipXmlHeader(FRUReader& reader, off_t offset);

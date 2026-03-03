@@ -1,27 +1,12 @@
-/*
-// Copyright (c) 2018 Intel Corporation
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-*/
-/// \file perform_probe.cpp
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2018 Intel Corporation
+
 #include "perform_probe.hpp"
 
 #include "perform_scan.hpp"
 
-#include <boost/algorithm/string/replace.hpp>
 #include <phosphor-logging/lg2.hpp>
 
-#include <iostream>
 #include <regex>
 #include <utility>
 
@@ -123,12 +108,13 @@ bool doProbe(const std::vector<std::string>& probeCommand,
                 {
                     if (!std::regex_search(probe, match, command))
                     {
-                        std::cerr
-                            << "found probe syntax error " << probe << "\n";
+                        lg2::error("found probe syntax error {JSON}", "JSON",
+                                   probe);
                         return false;
                     }
                     std::string commandStr = *(match.begin() + 1);
-                    boost::replace_all(commandStr, "'", "");
+                    replaceAll(commandStr, "'", "");
+
                     cur = (std::find(scan->passedProbes.begin(),
                                      scan->passedProbes.end(), commandStr) !=
                            scan->passedProbes.end());
@@ -145,17 +131,19 @@ bool doProbe(const std::vector<std::string>& probeCommand,
         {
             if (!std::regex_search(probe, match, command))
             {
-                std::cerr << "dbus probe syntax error " << probe << "\n";
+                lg2::error("dbus probe syntax error {JSON}", "JSON", probe);
                 return false;
             }
             std::string commandStr = *(match.begin() + 1);
             // convert single ticks and single slashes into legal json
-            boost::replace_all(commandStr, "'", "\"");
-            boost::replace_all(commandStr, R"(\)", R"(\\)");
+            std::ranges::replace(commandStr, '\'', '"');
+
+            replaceAll(commandStr, R"(\)", R"(\\)");
             auto json = nlohmann::json::parse(commandStr, nullptr, false, true);
             if (json.is_discarded())
             {
-                std::cerr << "dbus command syntax error " << commandStr << "\n";
+                lg2::error("dbus command syntax error {STR}", "STR",
+                           commandStr);
                 return false;
             }
             // we can match any (string, variant) property. (string, string)
@@ -196,7 +184,7 @@ bool doProbe(const std::vector<std::string>& probeCommand,
     if (ret && foundDevs.empty())
     {
         foundDevs.emplace_back(
-            boost::container::flat_map<std::string, DBusValueVariant>{},
+            std::flat_map<std::string, DBusValueVariant, std::less<>>{},
             std::string{});
     }
     if (matchOne && ret)
@@ -232,8 +220,7 @@ PerformProbe::~PerformProbe()
 
 FoundProbeTypeT findProbeType(const std::string& probe)
 {
-    static const boost::container::flat_map<const char*, probe_type_codes,
-                                            CmpStr>
+    static const std::flat_map<std::string_view, probe_type_codes, std::less<>>
         probeTypes{{{"FALSE", probe_type_codes::FALSE_T},
                     {"TRUE", probe_type_codes::TRUE_T},
                     {"AND", probe_type_codes::AND},
@@ -241,8 +228,8 @@ FoundProbeTypeT findProbeType(const std::string& probe)
                     {"FOUND", probe_type_codes::FOUND},
                     {"MATCH_ONE", probe_type_codes::MATCH_ONE}}};
 
-    boost::container::flat_map<const char*, probe_type_codes,
-                               CmpStr>::const_iterator probeType;
+    std::flat_map<std::string_view, probe_type_codes,
+                  std::less<>>::const_iterator probeType;
     for (probeType = probeTypes.begin(); probeType != probeTypes.end();
          ++probeType)
     {

@@ -1,35 +1,21 @@
-/*
-// Copyright (c) 2017 Intel Corporation
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-*/
-/// \file utils.cpp
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2017 Intel Corporation
 
 #include "utils.hpp"
 
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/find.hpp>
-#include <boost/algorithm/string/predicate.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/container/flat_map.hpp>
 #include <boost/lexical_cast.hpp>
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
-#include <iostream>
+#include <flat_map>
 #include <map>
+#include <ranges>
 #include <regex>
+#include <string_view>
+#include <utility>
 
 namespace fs = std::filesystem;
 
@@ -54,7 +40,7 @@ bool findFiles(const fs::path& dirPath, const std::string& matchString,
     return true;
 }
 
-bool findFiles(const std::vector<fs::path>&& dirPaths,
+bool findFiles(const std::vector<fs::path>& dirPaths,
                const std::string& matchString,
                std::vector<fs::path>& foundPaths)
 {
@@ -68,8 +54,14 @@ bool findFiles(const std::vector<fs::path>&& dirPaths,
             continue;
         }
 
-        for (const auto& p : fs::directory_iterator(dirPath))
+        for (const auto& p : fs::recursive_directory_iterator(dirPath))
         {
+            std::error_code ec;
+            if (p.is_directory(ec))
+            {
+                continue;
+            }
+
             std::string path = p.path().string();
             if (std::regex_search(path, match, search))
             {
@@ -87,7 +79,7 @@ bool findFiles(const std::vector<fs::path>&& dirPaths,
 }
 
 bool getI2cDevicePaths(const fs::path& dirPath,
-                       boost::container::flat_map<size_t, fs::path>& busPaths)
+                       std::flat_map<size_t, fs::path>& busPaths)
 {
     if (!fs::exists(dirPath))
     {
@@ -153,8 +145,9 @@ struct MatchProbe<std::string>
             }
             catch (const std::regex_error&)
             {
-                std::cerr << "Syntax error in regular expression: " << probe
-                          << " will never match";
+                lg2::error(
+                    "Syntax error in regular expression: {PROBE} will never match",
+                    "PROBE", probe);
             }
         }
 
@@ -183,4 +176,70 @@ struct MatchProbeForwarder
 bool matchProbe(const nlohmann::json& probe, const DBusValueVariant& dbusValue)
 {
     return std::visit(MatchProbeForwarder(probe), dbusValue);
+}
+
+std::vector<std::string> split(std::string_view str, char delim)
+{
+    std::vector<std::string> out;
+
+    size_t start = 0;
+    while (start <= str.size())
+    {
+        size_t end = str.find(delim, start);
+        if (end == std::string_view::npos)
+        {
+            out.emplace_back(str.substr(start));
+            break;
+        }
+
+        out.emplace_back(str.substr(start, end - start));
+        start = end + 1;
+    }
+
+    return out;
+}
+
+void iReplaceAll(std::string& str, std::string_view search,
+                 std::string_view replace)
+{
+    if (search.empty() || search == replace)
+    {
+        return;
+    }
+
+    while (true)
+    {
+        std::ranges::subrange<std::string::iterator> match =
+            iFindFirst(str, search);
+        if (!match)
+        {
+            break;
+        }
+
+        str.replace(match.begin(), match.end(), replace.begin(), replace.end());
+    }
+}
+
+void replaceAll(std::string& str, std::string_view search,
+                std::string_view replace)
+{
+    if (search.empty())
+    {
+        return;
+    }
+
+    size_t pos = 0;
+    while ((pos = str.find(search, pos)) != std::string::npos)
+    {
+        str.replace(pos, search.size(), replace);
+        pos += replace.size();
+    }
+}
+
+std::string toLowerCopy(std::string_view str)
+{
+    std::string result(str);
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return asciiToLower(c); });
+    return result;
 }

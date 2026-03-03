@@ -1,13 +1,14 @@
 #pragma once
 
 #include "../utils.hpp"
+#include "entity_manager.hpp"
 
 #include <systemd/sd-journal.h>
 
-#include <boost/container/flat_map.hpp>
 #include <nlohmann/json.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
+#include <flat_map>
 #include <functional>
 #include <list>
 #include <vector>
@@ -22,27 +23,28 @@ struct DBusDeviceDescriptor
 
 using FoundDevices = std::vector<DBusDeviceDescriptor>;
 
-struct PerformScan : std::enable_shared_from_this<PerformScan>
+struct PerformScan final : std::enable_shared_from_this<PerformScan>
 {
-    PerformScan(nlohmann::json& systemConfiguration,
-                nlohmann::json& missingConfigurations,
-                std::list<nlohmann::json>& configurations,
-                sdbusplus::asio::object_server& objServer,
-                std::function<void()>&& callback);
+    PerformScan(EntityManager& em, nlohmann::json& missingConfigurations,
+                std::vector<nlohmann::json>& configurations,
+                boost::asio::io_context& io, std::function<void()>&& callback);
 
     void updateSystemConfiguration(const nlohmann::json& recordRef,
                                    const std::string& probeName,
                                    FoundDevices& foundDevices);
     void run();
-    virtual ~PerformScan();
-    nlohmann::json& _systemConfiguration;
-    nlohmann::json& _missingConfigurations;
-    std::list<nlohmann::json> _configurations;
-    sdbusplus::asio::object_server& objServer;
-    std::function<void()> _callback;
-    bool _passed = false;
+    ~PerformScan();
+    EntityManager& _em;
     MapperGetSubTreeResponse dbusProbeObjects;
     std::vector<std::string> passedProbes;
+
+  private:
+    nlohmann::json& _missingConfigurations;
+    std::vector<nlohmann::json> _configurations;
+    std::function<void()> _callback;
+    bool _passed = false;
+
+    boost::asio::io_context& io;
 };
 
 } // namespace scan

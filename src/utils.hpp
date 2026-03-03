@@ -1,47 +1,36 @@
-/*
-// Copyright (c) 2017 Intel Corporation
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-*/
-/// \file utils.hpp
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2017 Intel Corporation
 
 #pragma once
 
-#include <boost/container/flat_map.hpp>
 #include <nlohmann/json.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/exception.hpp>
 
+#include <charconv>
 #include <filesystem>
+#include <flat_map>
 
 using DBusValueVariant =
     std::variant<std::string, int64_t, uint64_t, double, int32_t, uint32_t,
-                 int16_t, uint16_t, uint8_t, bool, std::vector<uint8_t>>;
-using DBusInterface = boost::container::flat_map<std::string, DBusValueVariant>;
-using DBusObject = boost::container::flat_map<std::string, DBusInterface>;
+                 int16_t, uint16_t, uint8_t, bool, std::vector<uint8_t>,
+                 std::vector<std::string>>;
+using DBusInterface = std::flat_map<std::string, DBusValueVariant, std::less<>>;
+using DBusObject = std::flat_map<std::string, DBusInterface, std::less<>>;
 using MapperGetSubTreeResponse =
-    boost::container::flat_map<std::string, DBusObject>;
+    std::flat_map<std::string, DBusObject, std::less<>>;
+using FirstIndex = size_t;
+using LastIndex = size_t;
 
 bool findFiles(const std::filesystem::path& dirPath,
                const std::string& matchString,
                std::vector<std::filesystem::path>& foundPaths);
-bool findFiles(const std::vector<std::filesystem::path>&& dirPaths,
+bool findFiles(const std::vector<std::filesystem::path>& dirPaths,
                const std::string& matchString,
                std::vector<std::filesystem::path>& foundPaths);
 
-bool getI2cDevicePaths(
-    const std::filesystem::path& dirPath,
-    boost::container::flat_map<size_t, std::filesystem::path>& busPaths);
+bool getI2cDevicePaths(const std::filesystem::path& dirPath,
+                       std::flat_map<size_t, std::filesystem::path>& busPaths);
 
 struct DBusInternalError final : public sdbusplus::exception_t
 {
@@ -87,3 +76,43 @@ inline bool deviceHasLogging(const nlohmann::json& json)
 /// \param dbusValue the property value being matched to a probe.
 /// \return true if the dbusValue matched the probe otherwise false.
 bool matchProbe(const nlohmann::json& probe, const DBusValueVariant& dbusValue);
+
+inline char asciiToLower(char c)
+{
+    // Converts a character to lower case without relying on std::locale
+    if ('A' <= c && c <= 'Z')
+    {
+        c -= static_cast<char>('A' - 'a');
+    }
+    return c;
+}
+
+template <typename T>
+auto iFindFirst(T&& str, std::string_view sub)
+{
+    return std::ranges::search(str, sub, [](char a, char b) {
+        return asciiToLower(a) == asciiToLower(b);
+    });
+}
+
+std::vector<std::string> split(std::string_view str, char delim);
+
+void iReplaceAll(std::string& str, std::string_view search,
+                 std::string_view replace);
+
+void replaceAll(std::string& str, std::string_view search,
+                std::string_view replace);
+
+std::string toLowerCopy(std::string_view str);
+
+template <typename T>
+std::from_chars_result fromCharsWrapper(const std::string_view& str, T& out,
+                                        bool& fullMatch, int base = 10)
+{
+    auto result = std::from_chars(
+        str.data(), std::next(str.begin(), str.size()), out, base);
+
+    fullMatch = result.ptr == std::next(str.begin(), str.size());
+
+    return result;
+}
