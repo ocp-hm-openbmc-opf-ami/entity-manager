@@ -6,8 +6,6 @@
 #include <sdbusplus/bus/match.hpp>
 #include <xyz/openbmc_project/State/Host/client.hpp>
 
-#include <flat_map>
-
 namespace power
 {
 
@@ -41,7 +39,7 @@ void PowerStatusMonitor::handlePowerMatch(sdbusplus::message_t& message)
     lg2::debug("power match triggered");
 
     std::string objectName;
-    std::flat_map<std::string, std::variant<std::string>> values;
+    std::map<std::string, std::variant<std::string>> values;
     message.read(objectName, values);
     auto findState = values.find(power::property);
     if (findState != values.end())

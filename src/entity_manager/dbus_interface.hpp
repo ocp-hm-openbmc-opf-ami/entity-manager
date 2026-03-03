@@ -9,6 +9,8 @@
 #include <sdbusplus/asio/object_server.hpp>
 
 #include <flat_map>
+#include <iostream>
+#include <map>
 #include <vector>
 
 extern std::shared_ptr<sdbusplus::asio::connection> systemBus;
@@ -61,7 +63,7 @@ class EMDBusInterface
 
   private:
     void addObject(
-        const std::flat_map<std::string, JsonVariantType, std::less<>>& data,
+        const std::map<std::string, JsonVariantType>& data,
         nlohmann::json& systemConfiguration, const std::string& jsonPointerPath,
         const std::string& path, const std::string& board);
 
@@ -217,8 +219,17 @@ void addValueToDBus(const std::string& key, const nlohmann::json& value,
 {
     if (value.is_array())
     {
-        addArrayToDbus<PropertyType>(key, value, &iface, permission,
-                                     systemConfiguration, path);
+        if constexpr (std::is_same_v<PropertyType, bool>)
+        {
+            lg2::error("array<bool> D-Bus properties are not supported for {KEY}",
+                       "KEY", key);
+            return;
+        }
+        else
+        {
+            addArrayToDbus<PropertyType>(key, value, &iface, permission,
+                                         systemConfiguration, path);
+        }
     }
     else
     {

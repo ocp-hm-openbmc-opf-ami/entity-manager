@@ -42,17 +42,20 @@ option(
     description: 'On target Mock FRU device for test',
 )
 
+option(
     'runtime-validate-json',
     type: 'boolean',
     value: false,
     description: 'Run JSON schema validation at runtime.',
 )
+
 option(
     'gpio-presence',
     type: 'boolean',
     value: true,
     description: 'Build gpio presence daemon',
 )
+
 option(
     'new-device-detection',
     type: 'boolean',

@@ -184,7 +184,7 @@ bool doProbe(const std::vector<std::string>& probeCommand,
     if (ret && foundDevs.empty())
     {
         foundDevs.emplace_back(
-            std::flat_map<std::string, DBusValueVariant, std::less<>>{},
+            DBusInterface{},
             std::string{});
     }
     if (matchOne && ret)

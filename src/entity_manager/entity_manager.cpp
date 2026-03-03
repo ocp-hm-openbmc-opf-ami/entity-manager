@@ -43,6 +43,8 @@ static constexpr std::array<const char*, 7> settableInterfaces = {
 const std::regex illegalDbusPathRegex("[^A-Za-z0-9_.]");
 const std::regex illegalDbusMemberRegex("[^A-Za-z0-9_]");
 
+std::shared_ptr<sdbusplus::asio::connection> systemBus;
+
 sdbusplus::asio::PropertyPermission getPermission(const std::string& interface)
 {
     return std::find(settableInterfaces.begin(), settableInterfaces.end(),
