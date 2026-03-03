@@ -45,6 +45,9 @@ const std::regex illegalDbusMemberRegex("[^A-Za-z0-9_]");
 
 std::shared_ptr<sdbusplus::asio::connection> systemBus;
 
+foundProbeData foundData;
+std::map<std::string, foundProbeData> mapFoundData;
+
 sdbusplus::asio::PropertyPermission getPermission(const std::string& interface)
 {
     return std::find(settableInterfaces.begin(), settableInterfaces.end(),

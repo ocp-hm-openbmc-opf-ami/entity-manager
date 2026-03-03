@@ -11,12 +11,13 @@
 #include <flat_map>
 #include <iostream>
 #include <map>
+#include <string>
 #include <vector>
 
 extern std::shared_ptr<sdbusplus::asio::connection> systemBus;
 using foundProbeData = std::map<std::string, std::string>;
-static foundProbeData foundData;
-static std::map<std::string, foundProbeData> mapFoundData;
+extern foundProbeData foundData;
+extern std::map<std::string, foundProbeData> mapFoundData;
 
 constexpr const char* fruConn = "xyz.openbmc_project.FruDevice";
 constexpr const char* fruIntf = "xyz.openbmc_project.FruDevice";
