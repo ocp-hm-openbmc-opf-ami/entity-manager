@@ -61,6 +61,9 @@ std::shared_ptr<sdbusplus::asio::connection> systemBus;
 nlohmann::json lastJson;
 Topology topology;
 
+foundProbeData foundData;
+std::map<std::string, foundProbeData> mapFoundData;
+
 boost::asio::io_context io;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
