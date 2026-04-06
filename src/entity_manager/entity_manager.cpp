@@ -233,6 +233,7 @@ void EntityManager::postExposesRecordsToDBus(
     exposesIndex++;
     jsonPointerPath = jsonPointerPathBoard;
     jsonPointerPath += std::to_string(exposesIndex);
+    const std::string jsonPointerPathItem = jsonPointerPath;
 
     auto findName = item.find("Name");
     if (findName == item.end())
@@ -313,8 +314,8 @@ void EntityManager::postExposesRecordsToDBus(
             boardNameOrig);
 
     dbus_interface.populateInterfaceFromJson(
-        systemConfiguration, jsonPointerPath, itemIface, item,
-        getPermission(itemType));
+    systemConfiguration, jsonPointerPathItem, itemIface, item,
+		    getPermission(itemType));
 
     topology.addBoard(boardPath, boardType, boardNameOrig, item);
 }

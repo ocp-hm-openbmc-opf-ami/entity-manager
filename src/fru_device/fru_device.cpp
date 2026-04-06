@@ -1679,8 +1679,7 @@ int main()
     std::function<void(sdbusplus::message_t & message)> eventHandler =
         [&](sdbusplus::message_t& message) {
             std::string objectName;
-            std::map<std::string, std::variant<std::string, bool, int64_t,
-                                               uint64_t, double>>
+	     std::flat_map<std::string, std::variant<std::string, bool, int64_t, uint64_t, double>>
                 values;
             message.read(objectName, values);
             auto findState = values.find("CurrentHostState");

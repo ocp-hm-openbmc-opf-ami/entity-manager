@@ -64,7 +64,7 @@ class EMDBusInterface
 
   private:
     void addObject(
-        const std::map<std::string, JsonVariantType>& data,
+        const std::flat_map<std::string, JsonVariantType, std::less<>>& data,
         nlohmann::json& systemConfiguration, const std::string& jsonPointerPath,
         const std::string& path, const std::string& board);
 

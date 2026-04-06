@@ -5,6 +5,7 @@
 
 #include <phosphor-logging/lg2.hpp>
 
+#include <flat_map>
 #include <fstream>
 #include <map>
 #include <regex>
@@ -268,7 +269,7 @@ static void addObjectRuntimeValidateJson(
 }
 
 void EMDBusInterface::addObject(
-    const std::map<std::string, JsonVariantType>& data,
+    const std::flat_map<std::string, JsonVariantType, std::less<>>& data,
     nlohmann::json& systemConfiguration, const std::string& jsonPointerPath,
     const std::string& path, const std::string& board)
 {
@@ -383,7 +384,8 @@ void EMDBusInterface::createAddObjectMethod(
         "AddObject",
         [&systemConfiguration, jsonPointerPath{std::string(jsonPointerPath)},
          path{std::string(path)}, board{std::string(board)},
-         this](const std::map<std::string, JsonVariantType>& data) {
+	 this](const std::flat_map<std::string, JsonVariantType, std::less<>>&
+                   data) {
             addObject(data, systemConfiguration, jsonPointerPath, path, board);
         });
     tryIfaceInitialize(iface);
