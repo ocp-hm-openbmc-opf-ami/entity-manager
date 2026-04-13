@@ -240,7 +240,6 @@ static bool isFruConfigured(uint8_t bus, uint8_t adress)
     return false;
 }
 
-
 // Issue an I2C transaction to first write to_target_buf_len bytes,then read
 // from_target_buf_len bytes.
 static int i2cSmbusWriteThenRead(
@@ -592,8 +591,8 @@ int getBusFRUs(int file, int first, int last, int bus,
             {
                 if (debug)
                 {
-                std::cerr << "device at bus " << bus << " address " << ii
-                          << " busy\n";
+                    std::cerr << "device at bus " << bus << " address " << ii
+                              << " busy\n";
                 }
                 continue;
             }
@@ -628,8 +627,8 @@ int getBusFRUs(int file, int first, int last, int bus,
             {
                 if (debug)
                 {
-                std::cerr << "failed to read bus " << bus << " address " << ii
-                          << "\n";
+                    std::cerr << "failed to read bus " << bus << " address "
+                              << ii << "\n";
                 }
                 if (powerIsOn)
                 {
@@ -889,7 +888,7 @@ void addFruObjectToDbus(
     {
         if (debug)
         {
-        std::cerr << "getProductName failed. product name is empty.\n";
+            std::cerr << "getProductName failed. product name is empty.\n";
         }
         productName += "Unknown";
     }
@@ -983,7 +982,7 @@ static bool readBaseboardFRU(std::vector<uint8_t>& baseboardFRU)
     return true;
 }
 
-bool writeFRU(uint8_t bus, uint8_t address, const std::vector<uint8_t>& fru)
+bool writeFRU(uint16_t bus, uint8_t address, const std::vector<uint8_t>& fru)
 {
     boost::container::flat_map<std::string, std::string> tmp;
     if (fru.size() > maxFruSize)
@@ -1342,7 +1341,7 @@ void rescanBusses(
             return;
         }
 
-	const fs::path lockPath = "/tmp/fru_scan.lock";
+        const fs::path lockPath = "/tmp/fru_scan.lock";
         {
             std::ofstream lockFile(lockPath);
             if (lockFile.is_open())
@@ -1409,7 +1408,7 @@ void rescanBusses(
                                            objServer, systemBus);
                     }
                 }
-		std::error_code remove_file;
+                std::error_code remove_file;
                 fs::remove(lockPath, remove_file);
                 if (remove_file)
                 {
@@ -1594,7 +1593,7 @@ bool updateFRUProperty(
         return false;
     }
 
-    if (!writeFRU(static_cast<uint8_t>(bus), static_cast<uint8_t>(address),
+    if (!writeFRU(static_cast<uint16_t>(bus), static_cast<uint8_t>(address),
                   fruData))
     {
         return false;
