@@ -226,7 +226,6 @@ static bool isFruConfigured(uint8_t bus, uint8_t adress)
     return false;
 }
 
-
 // Issue an I2C transaction to first write to_target_buf_len bytes,then read
 // from_target_buf_len bytes.
 static int i2cSmbusWriteThenRead(
@@ -955,7 +954,7 @@ void addFruObjectToDbus(
         device, formattedFRU, bus, address, unknownBusObjectCount);
     if (!optionalProductName)
     {
-	lg2::error("getProductName failed. product name is empty.");
+        lg2::error("getProductName failed. product name is empty.");
         productName += "Unknown";
     }
     else
@@ -1104,7 +1103,7 @@ bool writeFruByteData(bool is16Bit, int file, uint8_t address, uint16_t index,
                                      byteData) == 0;
 }
 
-bool writeFRU(uint8_t bus, uint8_t address, const std::vector<uint8_t>& fru)
+bool writeFRU(uint16_t bus, uint8_t address, const std::vector<uint8_t>& fru)
 {
     std::flat_map<std::string, std::string, std::less<>> tmp;
     if (fru.size() > maxFruSize)
@@ -1475,7 +1474,7 @@ void rescanBusses(
             return;
         }
 
-	const fs::path lockPath = "/tmp/fru_scan.lock";
+        const fs::path lockPath = "/tmp/fru_scan.lock";
         {
             std::ofstream lockFile(lockPath);
             if (lockFile.is_open())
@@ -1542,7 +1541,7 @@ void rescanBusses(
                                            addressBlocklist, objServer);
                     }
                 }
-		std::error_code remove_file;
+                std::error_code remove_file;
                 fs::remove(lockPath, remove_file);
                 if (remove_file)
                 {
@@ -1591,7 +1590,7 @@ bool updateFruProperty(
         return false;
     }
 
-    if (!writeFRU(static_cast<uint8_t>(bus), static_cast<uint8_t>(address),
+    if (!writeFRU(static_cast<uint16_t>(bus), static_cast<uint8_t>(address),
                   fruData))
     {
         lg2::error("Failed to write the FRU");
@@ -1679,7 +1678,8 @@ int main()
     std::function<void(sdbusplus::message_t & message)> eventHandler =
         [&](sdbusplus::message_t& message) {
             std::string objectName;
-	     std::flat_map<std::string, std::variant<std::string, bool, int64_t, uint64_t, double>>
+            std::flat_map<std::string, std::variant<std::string, bool, int64_t,
+                                                    uint64_t, double>>
                 values;
             message.read(objectName, values);
             auto findState = values.find("CurrentHostState");
