@@ -201,7 +201,7 @@ static void makeProbeInterface(size_t bus, size_t address,
     it->second->initialize();
 }
 
-static bool isFruConfigured(uint8_t bus, uint8_t adress)
+static bool isFruConfigured(uint16_t bus, uint8_t adress)
 {
     std::string configFile =
         "/usr/share/entity-manager/configurations/eeprom.json";
@@ -230,7 +230,7 @@ static bool isFruConfigured(uint8_t bus, uint8_t adress)
     }
     for (const auto& fruConfigs : data["FRU_EEPROM"])
     {
-        uint8_t busConf = static_cast<uint8_t>(fruConfigs["Bus"]);
+        uint16_t busConf = static_cast<uint16_t>(fruConfigs["Bus"]);
         uint8_t addrConf = static_cast<uint8_t>(fruConfigs["Address"]);
         if ((busConf == bus) && (addrConf == adress))
         {
@@ -1228,7 +1228,7 @@ void DoFruConfig(sdbusplus::asio::object_server& objServer)
     }
     for (const auto& fruConfigs : data["FRU_EEPROM"])
     {
-        uint8_t busConf = static_cast<uint8_t>(fruConfigs["Bus"]);
+        uint16_t busConf = static_cast<uint16_t>(fruConfigs["Bus"]);
         uint8_t addrConf = static_cast<uint8_t>(fruConfigs["Address"]);
         std::string fruName = static_cast<std::string>(fruConfigs["Name"]);
         uint8_t fruId = static_cast<uint8_t>(fruConfigs["FruId"]);
