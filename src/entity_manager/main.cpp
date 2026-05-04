@@ -16,7 +16,7 @@ int main()
     const std::filesystem::path schemaDirectory(PACKAGE_DIR "schemas");
 
     boost::asio::io_context io;
-    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
+    systemBus = std::make_shared<sdbusplus::asio::connection>(io);
     systemBus->request_name("xyz.openbmc_project.EntityManager");
     EntityManager em(systemBus, io, configurationDirectories, schemaDirectory);
 

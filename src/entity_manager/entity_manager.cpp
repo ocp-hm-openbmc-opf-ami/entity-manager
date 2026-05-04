@@ -188,18 +188,35 @@ void EntityManager::postBoardToDBus(
     dbus_interface.populateInterfaceFromJson(
         systemConfiguration, jsonPointerPath, boardIface, boardValues);
     jsonPointerPath += "/";
+    std::string foundPath;
     // iterate through board properties
     for (const auto& [propName, propValue] : boardValues.items())
     {
+        if (propName == "FoundProbePath")
+        {
+            foundPath = propValue.get<std::string>();
+        }
         if (propValue.type() == nlohmann::json::value_t::object)
         {
             std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
                 dbus_interface.createInterface(boardPath, propName,
                                                boardNameOrig);
+            auto perm = sdbusplus::asio::PropertyPermission::readOnly;
+            // IPMI/DCMI compatibility: ipmid Set Asset Tag writes to
+            // Decorator.AssetTag (entity-manager), not FruDevice directly.
+            // Make it writable and propagate to FruDevice PRODUCT_ASSET_TAG
+            // via persistAssetTag() in dbus_interface.hpp.
+
+            if (propName == "xyz.openbmc_project.Inventory.Decorator.AssetTag")
+            {
+                foundData["foundPath"] = foundPath;
+                mapFoundData[jsonPointerPath + propName] = foundData;
+                perm = sdbusplus::asio::PropertyPermission::readWrite;
+            }
 
             dbus_interface.populateInterfaceFromJson(
                 systemConfiguration, jsonPointerPath + propName, iface,
-                propValue);
+                propValue, perm);
         }
     }
 
@@ -314,8 +331,8 @@ void EntityManager::postExposesRecordsToDBus(
             boardNameOrig);
 
     dbus_interface.populateInterfaceFromJson(
-    systemConfiguration, jsonPointerPathItem, itemIface, item,
-		    getPermission(itemType));
+        systemConfiguration, jsonPointerPathItem, itemIface, item,
+        getPermission(itemType));
 
     topology.addBoard(boardPath, boardType, boardNameOrig, item);
 }
