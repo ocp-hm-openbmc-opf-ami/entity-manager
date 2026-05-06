@@ -2,21 +2,31 @@
 
 #include <nlohmann/json.hpp>
 
-#include <list>
-#include <set>
+#include <unordered_set>
+#include <vector>
 
-namespace configuration
-{
-constexpr const char* globalSchema = "global.json";
-constexpr const char* hostConfigurationDirectory = SYSCONF_DIR "configurations";
-constexpr const char* configurationDirectory = PACKAGE_DIR "configurations";
 constexpr const char* currentConfiguration = "/var/configuration/system.json";
-constexpr const char* schemaDirectory = PACKAGE_DIR "configurations/schemas";
-constexpr const bool debug = false;
+
+class Configuration
+{
+  public:
+    explicit Configuration(
+        const std::vector<std::filesystem::path>& configurationDirectories,
+        const std::filesystem::path& schemaDirectory);
+    std::unordered_set<std::string> probeInterfaces;
+    std::vector<nlohmann::json> configurations;
+
+    const std::filesystem::path schemaDirectory;
+
+  protected:
+    void loadConfigurations();
+    void filterProbeInterfaces();
+
+  private:
+    std::vector<std::filesystem::path> configurationDirectories;
+};
 
 bool writeJsonFiles(const nlohmann::json& systemConfiguration);
-
-bool loadConfigurations(std::list<nlohmann::json>& configurations);
 
 template <typename JsonType>
 bool setJsonFromPointer(const std::string& ptrStr, const JsonType& value,
@@ -29,7 +39,7 @@ bool setJsonFromPointer(const std::string& ptrStr, const JsonType& value,
         ref = value;
         return true;
     }
-    catch (const std::out_of_range&)
+    catch (const nlohmann::json::out_of_range&)
     {
         return false;
     }
@@ -40,7 +50,3 @@ void deriveNewConfiguration(const nlohmann::json& oldConfiguration,
 
 bool validateJson(const nlohmann::json& schemaFile,
                   const nlohmann::json& input);
-
-std::set<std::string> getProbeInterfaces();
-
-} // namespace configuration

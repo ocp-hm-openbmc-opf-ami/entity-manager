@@ -1,38 +1,22 @@
-/*
-// Copyright (c) 2018 Intel Corporation
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-*/
-/// \file overlay.cpp
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2018 Intel Corporation
 
 #include "overlay.hpp"
 
+#include "../utils.hpp"
 #include "devices.hpp"
 #include "utils.hpp"
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
-#include <boost/process/child.hpp>
 #include <nlohmann/json.hpp>
 #include <phosphor-logging/lg2.hpp>
 
 #include <filesystem>
+#include <flat_map>
 #include <fstream>
 #include <iomanip>
-#include <iostream>
 #include <regex>
 #include <string>
 
@@ -55,7 +39,7 @@ std::string jsonToString(const nlohmann::json& in)
         // remove brackets and comma from array
         std::string array = in.dump();
         array = array.substr(1, array.size() - 2);
-        boost::replace_all(array, ",", " ");
+        std::ranges::replace(array, ',', ' ');
         return array;
     }
     return in.dump();
@@ -69,7 +53,7 @@ static std::string deviceDirName(uint64_t bus, uint64_t address)
     return name.str();
 }
 
-void linkMux(const std::string& muxName, uint64_t busIndex, uint64_t address,
+void linkMux(std::string_view muxName, uint64_t busIndex, uint64_t address,
              const std::vector<std::string>& channelNames)
 {
     std::error_code ec;
@@ -96,11 +80,8 @@ void linkMux(const std::string& muxName, uint64_t busIndex, uint64_t address,
             devDir / ("channel-" + std::to_string(channelIndex));
         if (!is_symlink(channelPath))
         {
-            if constexpr (debug)
-            {
-            std::cerr << channelPath << " for mux channel " << channelName
-                      << " doesn't exist!\n";
-            }
+            lg2::error("{PATH} for mux channel {CHANNEL} doesn't exist!",
+                       "PATH", channelPath.string(), "CHANNEL", channelName);
             continue;
         }
         std::filesystem::path bus = std::filesystem::read_symlink(channelPath);
@@ -111,24 +92,21 @@ void linkMux(const std::string& muxName, uint64_t busIndex, uint64_t address,
         std::filesystem::create_symlink(fp, link, ec);
         if (ec)
         {
-            std::cerr << "Failure creating symlink for " << fp << " to " << link
-                      << "\n";
+            lg2::error("Failure creating symlink for {PATH} to {LINK}", "PATH",
+                       fp.string(), "LINK", link.string());
         }
     }
 }
 
-static int deleteDevice(const std::string& busPath, uint64_t address,
-                        const std::string& destructor)
+static int deleteDevice(std::string_view busPath, uint64_t address,
+                        std::string_view destructor)
 {
     std::filesystem::path deviceDestructor(busPath);
     deviceDestructor /= destructor;
     std::ofstream deviceFile(deviceDestructor);
     if (!deviceFile.good())
     {
-        if constexpr (debug)
-        {
-        std::cerr << "Error writing " << deviceDestructor << "\n";
-        }
+        lg2::error("Error writing {PATH}", "PATH", deviceDestructor.string());
         return -1;
     }
     deviceFile << std::to_string(address);
@@ -136,19 +114,15 @@ static int deleteDevice(const std::string& busPath, uint64_t address,
     return 0;
 }
 
-static int createDevice(const std::string& busPath,
-                        const std::string& parameters,
-                        const std::string& constructor)
+static int createDevice(std::string_view busPath, std::string_view parameters,
+                        std::string_view constructor)
 {
     std::filesystem::path deviceConstructor(busPath);
     deviceConstructor /= constructor;
     std::ofstream deviceFile(deviceConstructor);
     if (!deviceFile.good())
     {
-        if constexpr (debug)
-        {
-        std::cerr << "Error writing " << deviceConstructor << "\n";
-        }
+        lg2::error("Error writing {PATH}", "PATH", deviceConstructor.string());
         return -1;
     }
     deviceFile << parameters;
@@ -157,7 +131,7 @@ static int createDevice(const std::string& busPath,
     return 0;
 }
 
-static bool deviceIsCreated(const std::string& busPath, uint64_t bus,
+static bool deviceIsCreated(std::string_view busPath, uint64_t bus,
                             uint64_t address,
                             const devices::createsHWMon hasHWMonDir)
 {
@@ -174,16 +148,20 @@ static bool deviceIsCreated(const std::string& busPath, uint64_t bus,
 }
 
 static int buildDevice(
-    const std::string& name, const std::string& busPath,
-    const std::string& parameters, uint64_t bus, uint64_t address,
-    const std::string& constructor, const std::string& destructor,
+    std::string_view name, std::string_view busPath,
+    std::string_view parameters, uint64_t bus, uint64_t address,
+    std::string_view constructor, std::string_view destructor,
     const devices::createsHWMon hasHWMonDir,
-    std::vector<std::string> channelNames, const size_t retries = 5)
+    std::vector<std::string> channelNames, boost::asio::io_context& io,
+    const size_t retries = 5)
 {
     if (retries == 0U)
     {
         return -1;
     }
+
+    lg2::debug("try to build device {NAME} at bus={BUS}, address={ADDR}",
+               "NAME", name, "BUS", bus, "ADDR", address);
 
     // If it's already instantiated, we don't need to create it again.
     if (!deviceIsCreated(busPath, bus, address, hasHWMonDir))
@@ -202,16 +180,17 @@ static int buildDevice(
             createTimer->async_wait(
                 [createTimer, name, busPath, parameters, bus, address,
                  constructor, destructor, hasHWMonDir,
-                 channelNames(std::move(channelNames)),
-                 retries](const boost::system::error_code& ec) mutable {
+                 channelNames(std::move(channelNames)), retries,
+                 &io](const boost::system::error_code& ec) mutable {
                     if (ec)
                     {
-                        std::cerr << "Timer error: " << ec << "\n";
+                        lg2::error("Timer error: {ERR}", "ERR", ec.message());
                         return -2;
                     }
                     return buildDevice(name, busPath, parameters, bus, address,
                                        constructor, destructor, hasHWMonDir,
-                                       std::move(channelNames), retries - 1);
+                                       std::move(channelNames), io,
+                                       retries - 1);
                 });
             return -1;
         }
@@ -226,14 +205,15 @@ static int buildDevice(
     return 0;
 }
 
-void exportDevice(const std::string& type,
-                  const devices::ExportTemplate& exportTemplate,
-                  const nlohmann::json& configuration)
+void exportDevice(const devices::ExportTemplate& exportTemplate,
+                  const nlohmann::json& configuration,
+                  boost::asio::io_context& io)
 {
-    std::string parameters = exportTemplate.parameters;
-    std::string busPath = exportTemplate.busPath;
-    std::string constructor = exportTemplate.add;
-    std::string destructor = exportTemplate.remove;
+    std::string_view type = exportTemplate.type;
+    std::string parameters(exportTemplate.parameters);
+    std::string busPath(exportTemplate.busPath);
+    std::string_view constructor = exportTemplate.add;
+    std::string_view destructor = exportTemplate.remove;
     devices::createsHWMon hasHWMonDir = exportTemplate.hasHWMonDir;
     std::string name = "unknown";
     std::optional<uint64_t> bus;
@@ -269,10 +249,8 @@ void exportDevice(const std::string& type,
         {
             channels = keyPair.value().get<std::vector<std::string>>();
         }
-        boost::replace_all(parameters, templateChar + keyPair.key(),
-                           subsituteString);
-        boost::replace_all(busPath, templateChar + keyPair.key(),
-                           subsituteString);
+        replaceAll(parameters, templateChar + keyPair.key(), subsituteString);
+        replaceAll(busPath, templateChar + keyPair.key(), subsituteString);
     }
 
     if (!bus || !address)
@@ -282,11 +260,14 @@ void exportDevice(const std::string& type,
     }
 
     buildDevice(name, busPath, parameters, *bus, *address, constructor,
-                destructor, hasHWMonDir, std::move(channels));
+                destructor, hasHWMonDir, std::move(channels), io);
 }
 
-bool loadOverlays(const nlohmann::json& systemConfiguration)
+bool loadOverlays(const nlohmann::json& systemConfiguration,
+                  boost::asio::io_context& io)
 {
+    lg2::debug("start loading device overlays");
+
     std::filesystem::create_directory(outputDir);
     for (auto entity = systemConfiguration.begin();
          entity != systemConfiguration.end(); entity++)
@@ -312,11 +293,13 @@ bool loadOverlays(const nlohmann::json& systemConfiguration)
             {
                 continue;
             }
-            std::string type = findType.value().get<std::string>();
-            auto device = devices::exportTemplates.find(type.c_str());
+            const std::string& type = findType.value().get<std::string>();
+            const auto* device = std::ranges::find_if(
+                devices::exportTemplates,
+                [&type](const auto& tmp) { return tmp.type == type; });
             if (device != devices::exportTemplates.end())
             {
-                exportDevice(type, device->second, configuration);
+                exportDevice(*device, configuration, io);
                 continue;
             }
 
@@ -328,6 +311,8 @@ bool loadOverlays(const nlohmann::json& systemConfiguration)
                        "TYPE", type);
         }
     }
+
+    lg2::debug("finish loading device overlays");
 
     return true;
 }

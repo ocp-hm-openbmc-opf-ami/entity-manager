@@ -1,41 +1,18 @@
-/*
-// Copyright (c) 2018 Intel Corporation
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-*/
-/// \file perform_scan.cpp
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright 2018 Intel Corporation
+
 #include "perform_scan.hpp"
 
 #include "perform_probe.hpp"
 #include "utils.hpp"
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/asio/steady_timer.hpp>
-#include <boost/container/flat_map.hpp>
-#include <boost/container/flat_set.hpp>
 #include <phosphor-logging/lg2.hpp>
 
+#include <cerrno>
 #include <charconv>
-#include <iostream>
-
-/* Hacks from splitting entity_manager.cpp */
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-extern std::shared_ptr<sdbusplus::asio::connection> systemBus;
-extern nlohmann::json lastJson;
-extern void propertiesChangedCallback(
-    nlohmann::json& systemConfiguration,
-    sdbusplus::asio::object_server& objServer);
-// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
+#include <flat_map>
+#include <flat_set>
 
 using GetSubTreeType = std::vector<
     std::pair<std::string,
@@ -53,74 +30,67 @@ struct DBusInterfaceInstance
 void getInterfaces(
     const DBusInterfaceInstance& instance,
     const std::vector<std::shared_ptr<probe::PerformProbe>>& probeVector,
-    const std::shared_ptr<scan::PerformScan>& scan, size_t retries = 5)
+    const std::shared_ptr<scan::PerformScan>& scan, boost::asio::io_context& io,
+    size_t retries = 5)
 {
     if (retries == 0U)
     {
-        std::cerr << "retries exhausted on " << instance.busName << " "
-                  << instance.path << " " << instance.interface << "\n";
+        lg2::error("retries exhausted on {BUSNAME} {PATH} {INTF}", "BUSNAME",
+                   instance.busName, "PATH", instance.path, "INTF",
+                   instance.interface);
         return;
     }
 
-    systemBus->async_method_call(
-        [instance, scan, probeVector,
-         retries](boost::system::error_code& errc, const DBusInterface& resp) {
+    scan->_em.systemBus->async_method_call(
+        [instance, scan, probeVector, retries,
+         &io](boost::system::error_code& errc,
+              const DBusInterface& resp) mutable {
             if (errc)
             {
-                std::cerr << "error calling getall on  " << instance.busName
-                          << " " << instance.path << " "
-                          << instance.interface << "\n";
+                // EBADR indicates the D-Bus object was removed between
+                // GetSubTree and GetAll. This corresponds to
+                // org.freedesktop.DBus.Error.UnknownObject and is expected
+                // during concurrent device removal. Skip retry to avoid
+                // unnecessary delays.
+                if (errc.value() == EBADR)
+                {
+                    lg2::info("D-Bus object removed during scan, skipping: "
+                              "{BUSNAME} {PATH} {INTF}",
+                              "BUSNAME", instance.busName, "PATH",
+                              instance.path, "INTF", instance.interface);
+                    return;
+                }
+
+                lg2::error("error calling getall on {BUSNAME} {PATH} {INTF}",
+                           "BUSNAME", instance.busName, "PATH", instance.path,
+                           "INTF", instance.interface);
 
                 auto timer = std::make_shared<boost::asio::steady_timer>(io);
                 timer->expires_after(std::chrono::seconds(2));
 
-                timer->async_wait([timer, instance, scan, probeVector,
-                                   retries](const boost::system::error_code&) {
-                    getInterfaces(instance, probeVector, scan, retries - 1);
+                timer->async_wait([timer, instance, scan, probeVector, retries,
+                                   &io](const boost::system::error_code&) {
+                    getInterfaces(instance, probeVector, scan, io, retries - 1);
                 });
                 return;
             }
 
-            scan->dbusProbeObjects[instance.path][instance.interface] = resp;
+            scan->dbusProbeObjects[std::string(instance.path)]
+                                  [std::string(instance.interface)] = resp;
         },
         instance.busName, instance.path, "org.freedesktop.DBus.Properties",
         "GetAll", instance.interface);
 }
 
-static void registerCallback(nlohmann::json& systemConfiguration,
-                             sdbusplus::asio::object_server& objServer,
-                             const std::string& path)
-{
-    static boost::container::flat_map<std::string, sdbusplus::bus::match_t>
-        dbusMatches;
-
-    auto find = dbusMatches.find(path);
-    if (find != dbusMatches.end())
-    {
-        return;
-    }
-
-    std::function<void(sdbusplus::message_t & message)> eventHandler =
-        [&](sdbusplus::message_t&) {
-            propertiesChangedCallback(systemConfiguration, objServer);
-        };
-
-    sdbusplus::bus::match_t match(
-        static_cast<sdbusplus::bus_t&>(*systemBus),
-        "type='signal',member='PropertiesChanged',path='" + path + "'",
-        eventHandler);
-    dbusMatches.emplace(path, std::move(match));
-}
-
 static void processDbusObjects(
     std::vector<std::shared_ptr<probe::PerformProbe>>& probeVector,
     const std::shared_ptr<scan::PerformScan>& scan,
-    const GetSubTreeType& interfaceSubtree)
+    const GetSubTreeType& interfaceSubtree, boost::asio::io_context& io)
 {
     for (const auto& [path, object] : interfaceSubtree)
     {
         // Get a PropertiesChanged callback for all interfaces on this path.
-        registerCallback(scan->_systemConfiguration, scan->objServer, path);
+        scan->_em.registerCallback(path);
 
         for (const auto& [busname, ifaces] : object)
         {
@@ -130,9 +100,10 @@ static void processDbusObjects(
                 // Introspectable, and Properties) are returned by
                 // the mapper but don't have properties, so don't bother
                 // with the GetAll call to save some cycles.
-                if (!boost::algorithm::starts_with(iface, "org.freedesktop"))
+                if (!iface.starts_with("org.freedesktop"))
                 {
-                    getInterfaces({busname, path, iface}, probeVector, scan);
+                    getInterfaces({busname, path, iface}, probeVector, scan,
+                                  io);
                 }
             }
         }
@@ -143,8 +114,9 @@ static void processDbusObjects(
 // for the paths that own the interfaces passed in.
 void findDbusObjects(
     std::vector<std::shared_ptr<probe::PerformProbe>>&& probeVector,
-    boost::container::flat_set<std::string>&& interfaces,
-    const std::shared_ptr<scan::PerformScan>& scan, size_t retries = 5)
+    std::flat_set<std::string, std::less<>>&& interfaces,
+    const std::shared_ptr<scan::PerformScan>& scan, boost::asio::io_context& io,
+    size_t retries = 5)
 {
     // Filter out interfaces already obtained.
     for (const auto& [path, probeInterfaces] : scan->dbusProbeObjects)
@@ -160,17 +132,17 @@ void findDbusObjects(
     }
 
     // find all connections in the mapper that expose a specific type
-    systemBus->async_method_call(
-        [interfaces, probeVector{std::move(probeVector)}, scan,
-         retries](boost::system::error_code& ec,
-                  const GetSubTreeType& interfaceSubtree) mutable {
+    scan->_em.systemBus->async_method_call(
+        [interfaces, probeVector{std::move(probeVector)}, scan, retries,
+         &io](boost::system::error_code& ec,
+              const GetSubTreeType& interfaceSubtree) mutable {
             if (ec)
             {
                 if (ec.value() == ENOENT)
                 {
                     return; // wasn't found by mapper
                 }
-                std::cerr << "Error communicating to mapper.\n";
+                lg2::error("Error communicating to mapper.");
 
                 if (retries == 0U)
                 {
@@ -184,16 +156,16 @@ void findDbusObjects(
 
                 timer->async_wait(
                     [timer, interfaces{std::move(interfaces)}, scan,
-                     probeVector{std::move(probeVector)},
-                     retries](const boost::system::error_code&) mutable {
+                     probeVector{std::move(probeVector)}, retries,
+                     &io](const boost::system::error_code&) mutable {
                         findDbusObjects(std::move(probeVector),
-                                        std::move(interfaces), scan,
+                                        std::move(interfaces), scan, io,
                                         retries - 1);
                     });
                 return;
             }
 
-            processDbusObjects(probeVector, scan, interfaceSubtree);
+            processDbusObjects(probeVector, scan, interfaceSubtree, io);
         },
         "xyz.openbmc_project.ObjectMapper",
         "/xyz/openbmc_project/object_mapper",
@@ -225,15 +197,12 @@ static std::string getRecordName(const DBusInterface& probe,
     return std::to_string(std::hash<std::string>{}(probeName + device.dump()));
 }
 
-scan::PerformScan::PerformScan(nlohmann::json& systemConfiguration,
-                               nlohmann::json& missingConfigurations,
-                               std::list<nlohmann::json>& configurations,
-                               sdbusplus::asio::object_server& objServerIn,
-                               std::function<void()>&& callback) :
-    _systemConfiguration(systemConfiguration),
-    _missingConfigurations(missingConfigurations),
-    _configurations(configurations), objServer(objServerIn),
-    _callback(std::move(callback))
+scan::PerformScan::PerformScan(
+    EntityManager& em, nlohmann::json& missingConfigurations,
+    std::vector<nlohmann::json>& configurations, boost::asio::io_context& io,
+    std::function<void()>&& callback) :
+    _em(em), _missingConfigurations(missingConfigurations),
+    _configurations(configurations), _callback(std::move(callback)), io(io)
 {}
 
 static void pruneRecordExposes(nlohmann::json& record)
@@ -268,7 +237,7 @@ static void recordDiscoveredIdentifiers(
     auto nameIt = record.find("Name");
     if (nameIt == record.end())
     {
-        std::cerr << "Last JSON Illegal\n";
+        lg2::error("Last JSON Illegal");
         return;
     }
 
@@ -292,21 +261,26 @@ static void recordDiscoveredIdentifiers(
 }
 
 static bool extractExposeActionRecordNames(std::vector<std::string>& matches,
-                                           nlohmann::json::iterator& keyPair)
+                                           const std::string& exposeKey,
+                                           nlohmann::json& exposeValue)
 {
-    if (keyPair.value().is_string())
+    const std::string* exposeValueStr =
+        exposeValue.get_ptr<const std::string*>();
+    if (exposeValueStr != nullptr)
     {
-        matches.emplace_back(keyPair.value());
+        matches.emplace_back(*exposeValueStr);
         return true;
     }
 
-    if (keyPair.value().is_array())
+    const nlohmann::json::array_t* exarr =
+        exposeValue.get_ptr<const nlohmann::json::array_t*>();
+    if (exarr != nullptr)
     {
-        for (const auto& value : keyPair.value())
+        for (const auto& value : *exarr)
         {
             if (!value.is_string())
             {
-                std::cerr << "Value is invalid type " << value << "\n";
+                lg2::error("Value is invalid type {VALUE}", "VALUE", value);
                 break;
             }
             matches.emplace_back(value);
@@ -315,8 +289,7 @@ static bool extractExposeActionRecordNames(std::vector<std::string>& matches,
         return true;
     }
 
-    std::cerr << "Value is invalid type " << keyPair.key() << "\n";
-
+    lg2::error("Value is invalid type {KEY}", "KEY", exposeKey);
     return false;
 }
 
@@ -335,11 +308,11 @@ static std::optional<std::vector<std::string>::iterator> findExposeActionRecord(
     return matchIt;
 }
 
-static void applyBindExposeAction(nlohmann::json& exposedObject,
-                                  nlohmann::json& expose,
+static void applyBindExposeAction(nlohmann::json::object_t& exposedObject,
+                                  nlohmann::json::object_t& expose,
                                   const std::string& propertyName)
 {
-    if (boost::starts_with(propertyName, "Bind"))
+    if (propertyName.starts_with("Bind"))
     {
         std::string bind = propertyName.substr(sizeof("Bind") - 1);
         exposedObject["Status"] = "okay";
@@ -347,7 +320,7 @@ static void applyBindExposeAction(nlohmann::json& exposedObject,
     }
 }
 
-static void applyDisableExposeAction(nlohmann::json& exposedObject,
+static void applyDisableExposeAction(nlohmann::json::object_t& exposedObject,
                                      const std::string& propertyName)
 {
     if (propertyName == "DisableNode")
@@ -357,8 +330,8 @@ static void applyDisableExposeAction(nlohmann::json& exposedObject,
 }
 
 static void applyConfigExposeActions(
-    std::vector<std::string>& matches, nlohmann::json& expose,
-    const std::string& propertyName, nlohmann::json& configExposes)
+    std::vector<std::string>& matches, nlohmann::json::object_t& expose,
+    const std::string& propertyName, nlohmann::json::array_t& configExposes)
 {
     for (auto& exposedObject : configExposes)
     {
@@ -366,18 +339,28 @@ static void applyConfigExposeActions(
         if (match)
         {
             matches.erase(*match);
-            applyBindExposeAction(exposedObject, expose, propertyName);
-            applyDisableExposeAction(exposedObject, propertyName);
+            nlohmann::json::object_t* exposedObjectObj =
+                exposedObject.get_ptr<nlohmann::json::object_t*>();
+            if (exposedObjectObj == nullptr)
+            {
+                lg2::error("Exposed object wasn't a object: {JSON}", "JSON",
+                           exposedObject.dump());
+                continue;
+            }
+
+            applyBindExposeAction(*exposedObjectObj, expose, propertyName);
+            applyDisableExposeAction(*exposedObjectObj, propertyName);
         }
     }
 }
 
 static void applyExposeActions(
     nlohmann::json& systemConfiguration, const std::string& recordName,
-    nlohmann::json& expose, nlohmann::json::iterator& keyPair)
+    nlohmann::json::object_t& expose, const std::string& exposeKey,
+    nlohmann::json& exposeValue)
 {
-    bool isBind = boost::starts_with(keyPair.key(), "Bind");
-    bool isDisable = keyPair.key() == "DisableNode";
+    bool isBind = exposeKey.starts_with("Bind");
+    bool isDisable = exposeKey == "DisableNode";
     bool isExposeAction = isBind || isDisable;
 
     if (!isExposeAction)
@@ -387,7 +370,7 @@ static void applyExposeActions(
 
     std::vector<std::string> matches;
 
-    if (!extractExposeActionRecordNames(matches, keyPair))
+    if (!extractExposeActionRecordNames(matches, exposeKey, exposeValue))
     {
         return;
     }
@@ -406,19 +389,20 @@ static void applyExposeActions(
             continue;
         }
 
-        if (!configListFind->is_array())
+        nlohmann::json::array_t* configList =
+            configListFind->get_ptr<nlohmann::json::array_t*>();
+        if (configList == nullptr)
         {
             continue;
         }
-
-        applyConfigExposeActions(matches, expose, keyPair.key(),
-                                 *configListFind);
+        applyConfigExposeActions(matches, expose, exposeKey, *configList);
     }
 
     if (!matches.empty())
     {
-        std::cerr << "configuration file dependency error, could not find "
-                  << keyPair.key() << " " << keyPair.value() << "\n";
+        lg2::error(
+            "configuration file dependency error, could not find {KEY} {VALUE}",
+            "KEY", exposeKey, "VALUE", exposeValue);
     }
 }
 
@@ -427,32 +411,55 @@ static std::string generateDeviceName(
     size_t foundDeviceIdx, const std::string& nameTemplate,
     std::optional<std::string>& replaceStr)
 {
-    nlohmann::json copyForName = {{"Name", nameTemplate}};
-    nlohmann::json::iterator copyIt = copyForName.begin();
+    nlohmann::json copyForName = nameTemplate;
     std::optional<std::string> replaceVal = em_utils::templateCharReplace(
-        copyIt, dbusObject, foundDeviceIdx, replaceStr);
+        copyForName, dbusObject, foundDeviceIdx, replaceStr);
 
     if (!replaceStr && replaceVal)
     {
-        if (usedNames.contains(copyIt.value()))
+        if (usedNames.contains(nameTemplate))
         {
             replaceStr = replaceVal;
-            copyForName = {{"Name", nameTemplate}};
-            copyIt = copyForName.begin();
-            em_utils::templateCharReplace(copyIt, dbusObject, foundDeviceIdx,
-                                          replaceStr);
+            em_utils::templateCharReplace(copyForName, dbusObject,
+                                          foundDeviceIdx, replaceStr);
         }
     }
 
     if (replaceStr)
     {
-        std::cerr << "Duplicates found, replacing " << *replaceStr
-                  << " with found device index.\n Consider "
-                     "fixing template to not have duplicates\n";
+        lg2::error(
+            "Duplicates found, replacing {STR} with found device index. Consider fixing template to not have duplicates",
+            "STR", *replaceStr);
     }
-
-    return copyIt.value();
+    const std::string* ret = copyForName.get_ptr<const std::string*>();
+    if (ret == nullptr)
+    {
+        lg2::error("Device name wasn't a string: ${JSON}", "JSON",
+                   copyForName.dump());
+        return "";
+    }
+    return *ret;
 }
+static void applyTemplateAndExposeActions(
+    const std::string& recordName, const DBusObject& dbusObject,
+    size_t foundDeviceIdx, const std::optional<std::string>& replaceStr,
+    nlohmann::json& value, nlohmann::json& systemConfiguration)
+{
+    nlohmann::json::object_t* exposeObj =
+        value.get_ptr<nlohmann::json::object_t*>();
+    if (exposeObj == nullptr)
+    {
+        return;
+    }
+    for (auto& [key, value] : *exposeObj)
+    {
+        em_utils::templateCharReplace(value, dbusObject, foundDeviceIdx,
+                                      replaceStr);
+
+        applyExposeActions(systemConfiguration, recordName, *exposeObj, key,
+                           value);
+    }
+};
 
 void scan::PerformScan::updateSystemConfiguration(
     const nlohmann::json& recordRef, const std::string& probeName,
@@ -471,11 +478,11 @@ void scan::PerformScan::updateSystemConfiguration(
     {
         std::string recordName = getRecordName(itr->interface, probeName);
 
-        auto record = _systemConfiguration.find(recordName);
-        if (record == _systemConfiguration.end())
+        auto record = _em.systemConfiguration.find(recordName);
+        if (record == _em.systemConfiguration.end())
         {
-            record = lastJson.find(recordName);
-            if (record == lastJson.end())
+            record = _em.lastJson.find(recordName);
+            if (record == _em.lastJson.end())
             {
                 itr++;
                 continue;
@@ -483,7 +490,7 @@ void scan::PerformScan::updateSystemConfiguration(
 
             pruneRecordExposes(*record);
 
-            _systemConfiguration[recordName] = *record;
+            _em.systemConfiguration[recordName] = *record;
         }
         _missingConfigurations.erase(recordName);
 
@@ -512,7 +519,15 @@ void scan::PerformScan::updateSystemConfiguration(
                                            ? emptyObject
                                            : objectIt->second;
 
-        nlohmann::json record = recordRef;
+        const nlohmann::json::object_t* recordPtr =
+            recordRef.get_ptr<const nlohmann::json::object_t*>();
+        if (recordPtr == nullptr)
+        {
+            lg2::error("Failed to parse record {JSON}", "JSON",
+                       recordRef.dump());
+            continue;
+        }
+        nlohmann::json::object_t record = *recordPtr;
         std::string recordName = getRecordName(foundDevice, probeName);
         size_t foundDeviceIdx = indexes.front();
         indexes.pop_front();
@@ -521,31 +536,46 @@ void scan::PerformScan::updateSystemConfiguration(
         auto getName = record.find("Name");
         if (getName == record.end())
         {
-            std::cerr << "Record Missing Name! " << record.dump();
+            lg2::error("Record Missing Name! {JSON}", "JSON", recordRef.dump());
             continue; // this should be impossible at this level
         }
 
+        const std::string* name = getName->second.get_ptr<const std::string*>();
+        if (name == nullptr)
+        {
+            lg2::error("Name wasn't a string: {JSON}", "JSON",
+                       recordRef.dump());
+            continue;
+        }
+
         std::string deviceName = generateDeviceName(
-            usedNames, dbusObject, foundDeviceIdx, getName.value(), replaceStr);
-        getName.value() = deviceName;
+            usedNames, dbusObject, foundDeviceIdx, *name, replaceStr);
+
+        record["Name"] = deviceName;
+
         usedNames.insert(deviceName);
 
         // Save the dbus path info of the device
         record["FoundProbePath"] = path;
 
-        for (auto keyPair = record.begin(); keyPair != record.end(); keyPair++)
+        for (auto& keyPair : record)
         {
-            if (keyPair.key() != "Name")
+            if (keyPair.first != "Name")
             {
-                em_utils::templateCharReplace(keyPair, dbusObject,
-                                              foundDeviceIdx, replaceStr);
+                // "Probe" string does not contain template variables
+                // Handle left-over variables for "Exposes" later below
+                const bool handleLeftOver =
+                    (keyPair.first != "Probe") && (keyPair.first != "Exposes");
+                em_utils::templateCharReplace(keyPair.second, dbusObject,
+                                              foundDeviceIdx, replaceStr,
+                                              handleLeftOver);
             }
         }
 
         // insert into configuration temporarily to be able to
         // reference ourselves
 
-        _systemConfiguration[recordName] = record;
+        _em.systemConfiguration[recordName] = record;
 
         auto findExpose = record.find("Exposes");
         if (findExpose == record.end())
@@ -553,28 +583,44 @@ void scan::PerformScan::updateSystemConfiguration(
             continue;
         }
 
-        for (auto& expose : *findExpose)
+        nlohmann::json::array_t* exposeArr =
+            findExpose->second.get_ptr<nlohmann::json::array_t*>();
+        if (exposeArr != nullptr)
         {
-            for (auto keyPair = expose.begin(); keyPair != expose.end();
-                 keyPair++)
+            for (auto& value : *exposeArr)
             {
-                em_utils::templateCharReplace(keyPair, dbusObject,
-                                              foundDeviceIdx, replaceStr);
-
-                applyExposeActions(_systemConfiguration, recordName, expose,
-                                   keyPair);
+                applyTemplateAndExposeActions(recordName, dbusObject,
+                                              foundDeviceIdx, replaceStr, value,
+                                              _em.systemConfiguration);
             }
+        }
+        else
+        {
+            applyTemplateAndExposeActions(
+                recordName, dbusObject, foundDeviceIdx, replaceStr,
+                findExpose->second, _em.systemConfiguration);
+        }
+
+        // If we end up here and the path is empty, we have Probe: "True"
+        // and we dont want that to show up in the associations.
+        if (!path.empty())
+        {
+            auto boardType = record.find("Type")->second.get<std::string>();
+            auto boardName = record.find("Name")->second.get<std::string>();
+            std::string boardInventoryPath =
+                em_utils::buildInventorySystemPath(boardName, boardType);
+            _em.topology.addProbePath(boardInventoryPath, path);
         }
 
         // overwrite ourselves with cleaned up version
-        _systemConfiguration[recordName] = record;
+        _em.systemConfiguration[recordName] = record;
         _missingConfigurations.erase(recordName);
     }
 }
 
 void scan::PerformScan::run()
 {
-    boost::container::flat_set<std::string> dbusProbeInterfaces;
+    std::flat_set<std::string, std::less<>> dbusProbeInterfaces;
     std::vector<std::shared_ptr<probe::PerformProbe>> dbusProbePointers;
 
     for (auto it = _configurations.begin(); it != _configurations.end();)
@@ -583,10 +629,8 @@ void scan::PerformScan::run()
         auto findProbe = it->find("Probe");
         if (findProbe == it->end())
         {
-            if constexpr (debug)
-            {
-            std::cerr << "configuration file missing probe:\n " << *it << "\n";
-            }
+            lg2::error("configuration file missing probe:\n {JSON}", "JSON",
+                       *it);
             it = _configurations.erase(it);
             continue;
         }
@@ -594,16 +638,21 @@ void scan::PerformScan::run()
         auto findName = it->find("Name");
         if (findName == it->end())
         {
-            if constexpr (debug)
-            {
-            std::cerr << "configuration file missing name:\n " << *it << "\n";
-            }
+            lg2::error("configuration file missing name:\n {JSON}", "JSON",
+                       *it);
             it = _configurations.erase(it);
             continue;
         }
-        std::string probeName = *findName;
 
-        if (std::find(passedProbes.begin(), passedProbes.end(), probeName) !=
+        const std::string* probeName = findName->get_ptr<const std::string*>();
+        if (probeName == nullptr)
+        {
+            lg2::error("Name wasn't a string? {JSON}", "JSON", *it);
+            it = _configurations.erase(it);
+            continue;
+        }
+
+        if (std::find(passedProbes.begin(), passedProbes.end(), *probeName) !=
             passedProbes.end())
         {
             it = _configurations.erase(it);
@@ -611,40 +660,52 @@ void scan::PerformScan::run()
         }
 
         nlohmann::json& recordRef = *it;
-        nlohmann::json probeCommand;
-        if ((*findProbe).type() != nlohmann::json::value_t::array)
+        std::vector<std::string> probeCommand;
+        nlohmann::json::array_t* probeCommandArrayPtr =
+            findProbe->get_ptr<nlohmann::json::array_t*>();
+        if (probeCommandArrayPtr != nullptr)
         {
-            probeCommand = nlohmann::json::array();
-            probeCommand.push_back(*findProbe);
+            for (const auto& probe : *probeCommandArrayPtr)
+            {
+                const std::string* probeStr =
+                    probe.get_ptr<const std::string*>();
+                if (probeStr == nullptr)
+                {
+                    lg2::error("Probe statement wasn't a string, can't parse");
+                    return;
+                }
+                probeCommand.push_back(*probeStr);
+            }
         }
         else
         {
-            probeCommand = *findProbe;
+            const std::string* probeStr =
+                findProbe->get_ptr<const std::string*>();
+            if (probeStr == nullptr)
+            {
+                lg2::error("Probe statement wasn't a string, can't parse");
+                return;
+            }
+            probeCommand.push_back(*probeStr);
         }
 
         // store reference to this to children to makes sure we don't get
         // destroyed too early
         auto thisRef = shared_from_this();
         auto probePointer = std::make_shared<probe::PerformProbe>(
-            recordRef, probeCommand, probeName, thisRef);
+            recordRef, probeCommand, *probeName, thisRef);
 
         // parse out dbus probes by discarding other probe types, store in a
         // map
-        for (const nlohmann::json& probeJson : probeCommand)
+        for (const std::string& probe : probeCommand)
         {
-            const std::string* probe = probeJson.get_ptr<const std::string*>();
-            if (probe == nullptr)
-            {
-                std::cerr << "Probe statement wasn't a string, can't parse";
-                continue;
-            }
-            if (probe::findProbeType(*probe))
+            if (probe::findProbeType(probe))
             {
                 continue;
             }
             // syntax requires probe before first open brace
-            auto findStart = probe->find('(');
-            std::string interface = probe->substr(0, findStart);
+            auto findStart = probe.find('(');
+            std::string interface = probe.substr(0, findStart);
             dbusProbeInterfaces.emplace(interface);
             dbusProbePointers.emplace_back(probePointer);
         }
@@ -654,7 +715,7 @@ void scan::PerformScan::run()
     // probe vector stores a shared_ptr to each PerformProbe that cares
     // about a dbus interface
     findDbusObjects(std::move(dbusProbePointers),
-                    std::move(dbusProbeInterfaces), shared_from_this());
+                    std::move(dbusProbeInterfaces), shared_from_this(), io);
 }
 
 scan::PerformScan::~PerformScan()
@@ -662,11 +723,11 @@ scan::PerformScan::~PerformScan()
     if (_passed)
     {
         auto nextScan = std::make_shared<PerformScan>(
-            _systemConfiguration, _missingConfigurations, _configurations,
-            objServer, std::move(_callback));
+            _em, _missingConfigurations, _configurations, io,
+            std::move(_callback));
         nextScan->passedProbes = std::move(passedProbes);
         nextScan->dbusProbeObjects = std::move(dbusProbeObjects);
-        nextScan->run();
+        boost::asio::post(_em.io, [nextScan]() { nextScan->run(); });
     }
     else
     {

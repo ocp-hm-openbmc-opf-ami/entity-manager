@@ -7,9 +7,6 @@
             "additionalProperties": false,
             "type": "object",
             "properties": {
-                "Bus": {
-                    "type": "string"
-                },
                 "Exposes": {
                     "description": "The schema for the exposes property. The exposes property must be an array where elements are of type EMExposesElement.  The exposes property is the heterogeneous configuration data exported to DBus upon a probe match.",
                     "type": "array",
@@ -43,11 +40,13 @@
                     "description": "The schema for the type property. The type property identifies the type of the configuration.  When exported, configurations will be instantiated as children of: /xyz/openbmc_project/configuration/<Type>",
                     "enum": [
                         "Board",
+                        "Cable",
                         "Chassis",
+                        "Cpu",
+                        "FlowMeter",
                         "NVMe",
                         "PowerSupply",
-                        "CPU",
-                        "Cable"
+                        "Valve"
                     ]
                 },
                 "xyz.openbmc_project.Common.UUID": {
@@ -103,6 +102,9 @@
                 },
                 "xyz.openbmc_project.Inventory.Item.Dimm": {
                     "$ref": "openbmc-dbus.json#/$defs/xyz/openbmc_project/Inventory/Item/Dimm"
+                },
+                "xyz.openbmc_project.Inventory.Item.Valve": {
+                    "$ref": "openbmc-dbus.json#/$defs/xyz/openbmc_project/Inventory/Item/Valve"
                 }
             },
             "required": ["Exposes", "Name", "Probe", "Type"]
