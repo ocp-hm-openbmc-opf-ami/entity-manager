@@ -499,7 +499,10 @@ void EntityManager::pruneConfiguration(bool powerOff, const std::string& name,
 
     ifaces.clear();
     systemConfiguration.erase(name);
-    topology.remove(device["Name"].get<std::string>());
+
+    std::string deviceName = device["Name"].get<std::string>();
+    topology.remove(deviceName);
+    boardNames.erase(deviceName);
     logDeviceRemoved(device);
 }
 

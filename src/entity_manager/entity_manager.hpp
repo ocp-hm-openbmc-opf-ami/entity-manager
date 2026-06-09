@@ -43,6 +43,7 @@ class EntityManager
     nlohmann::json lastJson;
     nlohmann::json systemConfiguration;
     Topology topology;
+    std::unordered_set<std::string> boardNames;
     boost::asio::io_context& io;
 
     dbus_interface::EMDBusInterface dbus_interface;
