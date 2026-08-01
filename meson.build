@@ -31,16 +31,23 @@ if get_option('fru-device')
     i2c = cpp.find_library('i2c')
 endif
 
+nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
+if get_option('tests').enabled()
+    sdbusplus = subproject('sdbusplus').get_variable('sdbusplus_dep')
+    meson.override_dependency('sdbusplus', sdbusplus)
+    phosphor_dbus_interfaces_dep = subproject('phosphor-dbus-interfaces').get_variable('phosphor_dbus_interfaces_dep')
+    phosphor_logging_dep = subproject('phosphor-logging').get_variable('phosphor_logging_dep')
+else
+    sdbusplus = dependency('sdbusplus')
+    phosphor_logging_dep = dependency('phosphor-logging')
+endif
+
 if get_option('devicetree-vpd') or get_option('gpio-presence')
     phosphor_dbus_interfaces_dep = dependency(
         'phosphor-dbus-interfaces',
         include_type: 'system',
     )
 endif
-
-nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
-sdbusplus = dependency('sdbusplus')
-phosphor_logging_dep = dependency('phosphor-logging')
 zlib_dep = dependency('zlib', include_type: 'system')
 libxml2_dep = dependency('libxml-2.0', include_type: 'system')
 
