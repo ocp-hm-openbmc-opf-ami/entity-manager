@@ -80,8 +80,12 @@ void linkMux(std::string_view muxName, uint64_t busIndex, uint64_t address,
             devDir / ("channel-" + std::to_string(channelIndex));
         if (!is_symlink(channelPath))
         {
-            lg2::error("{PATH} for mux channel {CHANNEL} doesn't exist!",
-                       "PATH", channelPath.string(), "CHANNEL", channelName);
+            if (debug)
+            {
+                lg2::error("{PATH} for mux channel {CHANNEL} doesn't exist!",
+                           "PATH", channelPath.string(), "CHANNEL",
+                           channelName);
+            }
             continue;
         }
         std::filesystem::path bus = std::filesystem::read_symlink(channelPath);
@@ -92,8 +96,11 @@ void linkMux(std::string_view muxName, uint64_t busIndex, uint64_t address,
         std::filesystem::create_symlink(fp, link, ec);
         if (ec)
         {
-            lg2::error("Failure creating symlink for {PATH} to {LINK}", "PATH",
-                       fp.string(), "LINK", link.string());
+            if (debug)
+            {
+                lg2::error("Failure creating symlink for {PATH} to {LINK}",
+                           "PATH", fp.string(), "LINK", link.string());
+            }
         }
     }
 }
@@ -106,7 +113,11 @@ static int deleteDevice(std::string_view busPath, uint64_t address,
     std::ofstream deviceFile(deviceDestructor);
     if (!deviceFile.good())
     {
-        lg2::error("Error writing {PATH}", "PATH", deviceDestructor.string());
+        if (debug)
+        {
+            lg2::error("Error writing {PATH}", "PATH",
+                       deviceDestructor.string());
+        }
         return -1;
     }
     deviceFile << std::to_string(address);
@@ -122,7 +133,11 @@ static int createDevice(std::string_view busPath, std::string_view parameters,
     std::ofstream deviceFile(deviceConstructor);
     if (!deviceFile.good())
     {
-        lg2::error("Error writing {PATH}", "PATH", deviceConstructor.string());
+        if (debug)
+        {
+            lg2::error("Error writing {PATH}", "PATH",
+                       deviceConstructor.string());
+        }
         return -1;
     }
     deviceFile << parameters;
