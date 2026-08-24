@@ -218,7 +218,10 @@ bool verifyOffset(std::span<const uint8_t> fruBytes, fruAreas currentArea,
     // check if Fru data has at least 8 byte header
     if (fruBytesSize <= fruBlockSize)
     {
-        lg2::error("Error: trying to parse empty FRU");
+        if (debug)
+        {
+            lg2::error("Error: trying to parse empty FRU");
+        }
         return false;
     }
 
@@ -437,7 +440,10 @@ resCodes formatIPMIFRU(
     resCodes ret = resCodes::resOK;
     if (fruBytes.size() <= fruBlockSize)
     {
-        lg2::error("Error: trying to parse empty FRU ");
+        if (debug)
+        {
+            lg2::error("Error: trying to parse empty FRU ");
+        }
         return resCodes::resErr;
     }
     result["Common_Format_Version"] =
@@ -1646,8 +1652,12 @@ std::optional<std::string> getProductName(
     resCodes res = formatIPMIFRU(device, formattedFRU);
     if (res == resCodes::resErr)
     {
-        lg2::error("failed to parse FRU for device at bus {BUS} address {ADDR}",
-                   "BUS", bus, "ADDR", address);
+        if (debug)
+        {
+            lg2::error(
+                "failed to parse FRU for device at bus {BUS} address {ADDR}",
+                "BUS", bus, "ADDR", address);
+        }
         return std::nullopt;
     }
     if (res == resCodes::resWarn)

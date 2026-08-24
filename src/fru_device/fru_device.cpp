@@ -1215,6 +1215,7 @@ bool writeFRU(uint16_t bus, uint8_t address, const std::vector<uint8_t>& fru)
     if (!is16Bit.has_value())
     {
         lg2::error("failed to detect if device is 8 or 16 bits");
+        close(file);
         return false;
     }
 
@@ -1374,7 +1375,7 @@ void DoFruConfig(sdbusplus::asio::object_server& objServer)
         uint8_t addrConf = static_cast<uint8_t>(fruConfigs["Address"]);
         std::string fruName = static_cast<std::string>(fruConfigs["Name"]);
         uint8_t fruId = static_cast<uint8_t>(fruConfigs["FruId"]);
-        uint8_t fruSize = static_cast<uint8_t>(fruConfigs["FruSize"]);
+        uint16_t fruSize = static_cast<uint16_t>(fruConfigs["FruSize"]);
         std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
             objServer.add_interface(
                 "/xyz/openbmc_project/FruDevice/" + fruName,
