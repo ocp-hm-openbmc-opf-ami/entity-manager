@@ -629,8 +629,11 @@ void scan::PerformScan::run()
         auto findProbe = it->find("Probe");
         if (findProbe == it->end())
         {
-            lg2::error("configuration file missing probe:\n {JSON}", "JSON",
-                       *it);
+            if (debug)
+            {
+                lg2::error("configuration file missing probe:\n {JSON}", "JSON",
+                           *it);
+            }
             it = _configurations.erase(it);
             continue;
         }
