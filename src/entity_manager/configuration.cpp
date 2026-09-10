@@ -147,8 +147,11 @@ void Configuration::filterProbeInterfaces()
         auto findProbe = it->find("Probe");
         if (findProbe == it->end())
         {
-            lg2::error("configuration file missing probe: {PROBE}", "PROBE",
-                       *it);
+            if (debug)
+            {
+                lg2::error("configuration file missing probe: {PROBE}", "PROBE",
+                           *it);
+            }
             it++;
             continue;
         }

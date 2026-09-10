@@ -522,7 +522,10 @@ void EntityManager::publishNewConfiguration(
     boost::asio::post(io, [this]() {
         if (!writeJsonFiles(systemConfiguration))
         {
-            lg2::error("Error writing json files");
+            if (debug)
+            {
+                lg2::error("Error writing json files");
+            }
         }
     });
 

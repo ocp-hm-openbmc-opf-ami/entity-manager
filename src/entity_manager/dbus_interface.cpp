@@ -354,7 +354,10 @@ void EMDBusInterface::addObjectJson(
     }
     if (!writeJsonFiles(systemConfiguration))
     {
-        lg2::error("Error writing json files");
+        if (debug)
+        {
+            lg2::error("Error writing json files");
+        }
     }
     std::string dbusName = *name;
 
@@ -384,7 +387,7 @@ void EMDBusInterface::createAddObjectMethod(
         "AddObject",
         [&systemConfiguration, jsonPointerPath{std::string(jsonPointerPath)},
          path{std::string(path)}, board{std::string(board)},
-	 this](const std::flat_map<std::string, JsonVariantType, std::less<>>&
+         this](const std::flat_map<std::string, JsonVariantType, std::less<>>&
                    data) {
             addObject(data, systemConfiguration, jsonPointerPath, path, board);
         });
